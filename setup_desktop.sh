@@ -1,7 +1,7 @@
 #!/bin/bash
 # Ubuntu VM desktop setup script
 # R. Dawson 2021
-VERSION="2.4.1"
+VERSION="2.5.0"
 
 ## Variables
 #TODO: ADAPTER: This works for a VM, but needs a better method
@@ -72,7 +72,7 @@ check_root() {
   # Check to ensure script is not run as root
   if [[ "${UID}" -eq 0 ]]; then
     UNAME=$(id -un)
-    printf "\nThis script must not be run as root.\n\n" >&2
+    printf "\nThis script should not be run as root.\n\n" >&2
     usage
   fi
 }
@@ -177,7 +177,7 @@ touch ${LOG_FILE}
 exec 3>&1 1>>${LOG_FILE} 2>&1
 
 # Provide usage statement if no parameters
-while getopts cdfp:v OPTION; do
+while getopts cdfhp:v OPTION; do
   case ${OPTION} in
 	c)
 	# Check for internet connection
@@ -378,9 +378,20 @@ case ${VPN_INSTALL} in
 	;;
 esac
 
+# Create update.sh file
+printf "Creating update.sh\n" | tee /dev/fd/3
+cat << EOF > ~/update.sh
+sudo apt update
+sudo apt-get -y dist-upgrade
+sudo apt-get -y autoremove --purge
+sudo apt-get -y clean
+EOF
+sudo chmod 744 ~/update.sh
+printf "Complete\n\n" | tee /dev/fd/3
+
 # Cleanup
 printf "Cleaning up\n" | tee /dev/fd/3
-sudo apt-get -y autoremove | echo_out
+sudo apt-get -y autoremove --purge | echo_out
 sudo apt-get -y clean | echo_out
 sudo rm 70-u2f.rules | echo_out # May not exist
 printf "Complete\n\n" | tee /dev/fd/3
