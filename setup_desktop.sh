@@ -1,17 +1,20 @@
 #!/bin/bash
 # Ubuntu VM desktop setup script
-# R. Dawson 2021
-VERSION="2.5.0"
+# R. Dawson 2021-2023
+VERSION="2.8.8"
 
 ## Variables
 #TODO: ADAPTER: This works for a VM, but needs a better method
 ADAPTER1=$(ls /sys/class/net | grep e) 	# 1st Ethernet adapter on VM
-BRANCH="main"							# Default to main branch
+BRANCH="main"							    # Default to main branch
 CHECK_IP="8.8.8.8"						# Test ping to google DNS
 DATE_VAR=$(date +'%y%m%d-%H%M')			# Today's Date and time
-LOG_FILE="${DATE_VAR}_install.log"  	# Log File name
-PACKAGE="snap" 							# Install snaps by default
+REBOOT_COMPLETE="true"          # Reboot when complete by default
+LOG_FILE="${DATE_VAR}_desktop_install.log"  	# Log File name
+PACKAGE="apt" 							  # Install snaps by default
+RTP_ENABLE="false"            # Do not enable RTP by default
 VPN_INSTALL="false"						# Do not install VPN clients by default
+WIFI_TOOLS="false"						# Do not install wifi tools by default
 
 ## Functions
 check_internet() {
@@ -105,6 +108,22 @@ install_airvpn () {
   printf "AirVPN Installation Complete.\n\n" | tee /dev/fd/3
 }
 
+install_browsers () {
+  printf "Installing Additional Browsers.\n" | tee /dev/fd/3
+  # Brave
+  echo_out "Brave Browser"
+  sudo curl -fsSLo /usr/share/keyrings/brave-browser-archive-keyring.gpg https://brave-browser-apt-release.s3.brave.com/brave-browser-archive-keyring.gpg | echo_out
+  echo "deb [signed-by=/usr/share/keyrings/brave-browser-archive-keyring.gpg arch=amd64] https://brave-browser-apt-release.s3.brave.com/ stable main"|sudo tee /etc/apt/sources.list.d/brave-browser-release.list
+  sudo apt update
+  sudo apt-get -y install brave-browser
+
+  # Chrome
+  wget https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+  sudo apt-get -y install google-chrome-stable_current_amd64.deb
+
+  printf "Browser Installation Complete.\n\n" | tee /dev/fd/3
+}
+
 install_flatpak () {
   printf "Installing Flatpak.\n" | tee /dev/fd/3
   sudo apt-get -y install flatpak | echo_out
@@ -156,16 +175,43 @@ install_protonvpn () {
   printf "ProtonVPN Installation Complete.\n\n" | tee /dev/fd/3
 }
 
+install_wifi_tools() {
+  printf "Installing WiFi tools.\n" | tee /dev/fd/3
+  wget -O - https://www.kismetwireless.net/repos/kismet-release.gpg.key | sudo tee /etc/apt/trusted.gpg.d/kismet.asc | echo_out
+  echo 'deb https://www.kismetwireless.net/repos/apt/release/jammy jammy main' | sudo tee /etc/apt/sources.list.d/kismet.list | echo_out
+  sudo apt update
+  sudo apt-get -y install kismet
+  pip install kismet_rest
+  
+  # Kismon installation
+  #sudo apt-get -y install python3-gi 
+  #sudo apt-get -y install gir1.2-gtk-3.0
+  #sudo apt-get -y install gir1.2-gdkpixbuf-2.0 
+  #sudo apt-get -y install python3-cairo 
+  sudo apt-get -y install python3-simplejson
+  sudo apt-get -y install gir1.2-osmgpsmap-1.0
+  cd ~
+  git clone https://github.com/radawson/kismon.git kismon
+  cd kismon
+  sudo make install
+  printf "Kismet and Kismon Installation Complete.\n\n" | tee /dev/fd/3
+
+}
+
 usage() {
-  echo "Usage: ${0} [-cfh] [-p VPN_name] " >&2
+  echo "Usage: ${0} [-bcfhrsvw] [-p VPN_name] " >&2
   echo "Sets up Ubuntu Desktop with useful apps."
   #echo "Do not run as root."
   echo
+  echo "-b 			Install multiple browsers."
   echo "-c 			Check internet connection before starting."
-  echo "-f			Install Flatpak."
+  echo "-f			Install Flatpak (not Snaps)."
   echo "-h 			Help (this list)."
-  echo "-p VPN_NAME	Install VPN client(s) or 'all'."
+  echo "-p      VPN_NAME	  Install VPN client(s) or 'all'."
+  echo "-r      Install and enable RDP."
+  echo "-s			Install Snaps (not flatpak)"
   echo "-v 			Verbose mode."
+  echo "-w			WiFi tools (kismet)."
   exit 1
 }
 
@@ -173,12 +219,13 @@ usage() {
 # Create a log file with current date and time
 touch ${LOG_FILE}
 
-# Redirect outputs
-exec 3>&1 1>>${LOG_FILE} 2>&1
-
 # Provide usage statement if no parameters
-while getopts cdfhp:v OPTION; do
+while getopts bcdfhp:rsvwx OPTION; do
   case ${OPTION} in
+  b)
+    # Install browser packages
+      install_browsers
+      ;;
 	c)
 	# Check for internet connection
 	  check_internet "${CHECK_IP}"
@@ -192,35 +239,55 @@ while getopts cdfhp:v OPTION; do
 	# Flag for flatpak installation
 	  PACKAGE="flatpak"
 	  echo_out "Flatpak use set to true"
-	  install_flatpak
 	  ;;  
 	h)
+  # Help statement
 	  usage
 	  ;;
 	p)
 	  VPN_INSTALL="${OPTARG}"
+    echo_out "${OPTARG} configured for VPN client install"
 	  ;;
+
+  r)
+    RDP_ENABLE="true"
+    echo_out "Remote Desktop Protocol daemon installation enabled"
+    ;;
+	s)
+	# Flag for snap installation
+	  PACKAGE="snap"
+	  echo_out "Snap use set to true"
+	  ;; 
 	v)
-      # Verbose is first so any other elements will echo as well
-      VERBOSE='true'
-      echo_out "Verbose mode on."
-      ;;
-    ?)
-      echo "invalid option" >&2
-      usage
-      ;;
+    VERBOSE='true'
+    echo_out "Verbose mode on."
+    ;;
+	w)
+	  WIFI_TOOLS='true'
+	  echo_out "WiFi tools will be installed"
+	  ;;
+  x)
+    REBOOT_COMPLETE="false"
+    echo_out "Reboot on complete disabled"
+    ;;
+  ?)
+    echo "invalid option" >&2
+    usage
+    ;;
   esac
 done
 
 # Clear the options from the arguments
 shift "$(( OPTIND - 1 ))"
 
+# Redirect outputs
+exec 3>&1 1>>${LOG_FILE} 2>&1
+
 # Start installation message
 echo_out "Script version ${VERSION}\n"
 printf "\nConfiguring Ubuntu Desktop\n" 1>&3
 printf "\nThis may take some time and the system may appear to be unresponsive\n" 1>&3
 printf "\nPlease be patient\n\n" 1>&3
-sudo :
 
 # Add Repositories
 printf "Adding Repositories\n" | tee /dev/fd/3
@@ -242,15 +309,57 @@ sudo apt-get -y dist-upgrade | echo_out
 sudo apt-get -y install apt-transport-https | echo_out
 printf "Complete\n\n" | tee /dev/fd/3
 
-# Install VirtualBox Guest Additions:
-printf "Installing VirtualBox Guest Additions\n" | tee /dev/fd/3
-sudo apt-get -y install dkms | echo_out
-sudo apt-get -y install gcc | echo_out
-sudo apt-get -y install make | echo_out
-sudo apt-get -y install perl | echo_out
-sudo apt-get -y install virtualbox-guest-additions-iso | echo_out
-sudo mount -o loop /usr/share/virtualbox/VBoxGuestAdditions.iso /media/ | echo_out
-/media/autorun.sh
+# Install git
+if [[ $(which git) == "" ]]; then
+  printf "Installing git\n" | tee /dev/fd/3
+  sudo apt-get -y install git
+  printf "Complete\n\n" | tee /dev/fd/3
+fi
+
+# Install flatpak
+if [[ ${PACKAGE} == "flatpak" ]]; then
+  printf "Installing flatpak\n" | tee /dev/fd/3
+  install_flatpak
+  printf "Complete\n\n" | tee /dev/fd/3
+fi
+
+# Install VM management software:
+printf "Checking for Virtual Machine\n\n" | tee /dev/fd/3
+SYSTEM_HW="$(sudo dmidecode -s system-product-name)"
+case ${SYSTEM_HW} in 
+  Parallels*)
+    printf "\tInstalling VM management software\n" | tee /dev/fd/3
+    sudo apt-get -y install prltools-linux | echo_out
+    printf "Complete\n\n" | tee /dev/fd/3
+    ;;
+  QEMU*)
+    printf "\tInstalling VM management software\n" | tee /dev/fd/3
+    sudo apt-get -y install qemu-guest-agent | echo_out
+    printf "Complete\n\n" | tee /dev/fd/3
+    ;;
+  VirtualBox*|Virtualbox*)
+    printf "\tInstalling VirtualBox Guest Additions\n" | tee /dev/fd/3
+	  sudo apt-get -y install dkms | echo_out
+	  sudo apt-get -y install gcc | echo_out
+	  sudo apt-get -y install make | echo_out
+	  sudo apt-get -y install perl | echo_out
+	  sudo apt-get -y install virtualbox-guest-additions-iso | echo_out
+	  sudo mount -o loop /usr/share/virtualbox/VBoxGuestAdditions.iso /media/ | echo_out
+	  /media/autorun.sh
+	  ;;
+  VMware*)
+    printf "\tInstalling VMWare Tools\n" | tee /dev/fd/3
+    sudo apt install -y --reinstall open-vm-tools-desktop fuse3
+    ;;
+  *)
+    echo_out "\tNo virtualization recognized.\n"
+	;;
+esac
+printf "Complete\n\n" | tee /dev/fd/3
+
+# Install python PIP
+printf "Installing python PIP\n" | tee /dev/fd/3
+sudo apt-get -y install python3-pip | echo_out
 printf "Complete\n\n" | tee /dev/fd/3
 
 # Install Tor Browser:
@@ -259,15 +368,23 @@ printf "Installing TOR browser bundle\n" | tee /dev/fd/3
 # gpg --homedir "$HOME/.local/share/torbrowser/gnupg_homedir" --refresh-keys --keyserver keyserver.ubuntu.com
 case ${PACKAGE} in
   flatpak)
-    flatpak install flathub com.github.micahflee.torbrowser-launcher -y
+    flatpak install flathub com.github.micahflee.torbrowser-launcher -y | echo_out
     ;;
   snap)
+    sudo snap install tor-mkg20001 | echo_out
     ;;
   *)
-    sudo apt-get -y install torbrowser-launcher | echo_out
+    mkdir ~/Desktop | echo_out
+	cd ~/Desktop
+  wget https://www.torproject.org/dist/torbrowser/11.5.2/tor-browser-linux64-11.5.2_en-US.tar.xz | echo_out
+	tar -xvf tor-browser-linux64-11.5.2_en-US.tar.xz | echo_out
+	rm tor-browser-linux64-11.5.2_en-US.tar.xz | echo_out
+	ln ./tor-browser_en-US/start-tor-browser.desktop /usr/share/applications/ | echo_out
+  TOR_INSTALL=$(ls | grep tor)
+  cd ${TOR_INSTALL}
+  ./start-tor-browser.desktop --register-app | echo_out
 	;;
 esac
-
 printf "Complete\n\n" | tee /dev/fd/3
 
 # GTKHash:
@@ -278,14 +395,15 @@ printf "Complete\n\n" | tee /dev/fd/3
 
 # Veracrypt:
 printf "Installing Veracrypt\n" | tee /dev/fd/3
+printf "\nA warning about a missing repository 'exfat-utils' is expected behavior for Ubuntu 22.04\n\n" | tee /dev/fd/3
 sudo apt-get -y install libwxgtk3.0-gtk3-0v5 | echo_out
 sudo apt-get -y install exfat-fuse exfat-utils | echo_out
 # Use either of these options but not both
 ## Option 1
 sudo apt-get -y install veracrypt | echo_out
 ## Option 2
-#sudo wget https://launchpad.net/veracrypt/trunk/1.24-update7/+download/veracrypt-console-1.24-Update7-Ubuntu-20.04-amd64.deb
-#sudo apt-get -y install ./veracrypt-console-1.24-Update7-Ubuntu-20.04-amd64.deb | tee /dev/fd/3
+#sudo wget https://launchpad.net/veracrypt/trunk/1.25.9/+download/veracrypt-1.25.9-Ubuntu-22.04-amd64.deb
+#sudo apt-get -y install ./veracrypt*.deb | tee /dev/fd/3
 printf "Complete\n\n" | tee /dev/fd/3
 
 # Onionshare:
@@ -295,11 +413,11 @@ printf "Installing Onionshare\n" | tee /dev/fd/3
 case ${PACKAGE} in
   flatpak)
     flatpak install flathub org.onionshare.OnionShare -y | echo_out
-	;;
+	  ;;
   snap)
     sudo snap install onionshare | echo_out
     sudo snap connect onionshare:removable-media | echo_out
-	;;
+	  ;;
   *)
     # Github install ** TESTING ONLY **
     #curl -sSL https://raw.githubusercontent.com/python-poetry/poetry/master/get-poetry.py | python - | tee /dev/fd/3
@@ -337,10 +455,31 @@ sudo wget https://raw.githubusercontent.com/Yubico/libu2f-host/master/70-u2f.rul
 sudo mkdir -p ~/.config/Yubico | echo_out
 printf "Complete\n\n" | tee /dev/fd/3
 
-#Nextcloud:
+# Nextcloud:
 printf "Installing Nextcloud Client\n\nThis can take a while\n" | tee /dev/fd/3
 sudo apt-get -y install nextcloud-client | echo_out
 printf "Complete\n\n" | tee /dev/fd/3
+
+# OnlyOffice:
+printf "Installing OnlyOffice\n" | tee /dev/fd/3
+
+case ${PACKAGE} in
+  flatpak)
+    flatpak install flathub org.onlyoffice.desktopeditors -y | echo_out
+	;;
+  *)
+    sudo snap install onlyoffice-desktopeditors | echo_out
+	;;
+esac
+printf "Complete\n\n" | tee /dev/fd/3
+
+# Remote Desktop Protocol
+if [[ RDP_ENABLE == "true" ]]; then
+  printf "Installing and Enabling RDP\n" | tee /dev/fd/3
+  sudo apt-get -y install xrdp | echo_out
+  sudo systemctl enable xrdp --now | echo_out
+  printf "Complete\n\n" | tee /dev/fd/3
+fi
 
 # VPN Clients
 case ${VPN_INSTALL} in
@@ -349,11 +488,11 @@ case ${VPN_INSTALL} in
 	;;
   all)
     install_airvpn
-	install_ivpn
+	  install_ivpn
     install_mullvad
     install_openvpn
-	install_nordvpn
-	install_protonvpn
+	  install_nordvpn
+	  install_protonvpn
     ;;
   airvpn)
     install_airvpn
@@ -378,14 +517,21 @@ case ${VPN_INSTALL} in
 	;;
 esac
 
+# WiFi Tools
+if [[ ${WIFI_TOOLS} == "true" ]]; then
+  install_wifi_tools
+fi  
+
 # Create update.sh file
 printf "Creating update.sh\n" | tee /dev/fd/3
-cat << EOF > ~/update.sh
-sudo apt update
+cat << @EOF > ~/update.sh
+#!/bin/bash
+sudo apt-get update
 sudo apt-get -y dist-upgrade
 sudo apt-get -y autoremove --purge
 sudo apt-get -y clean
-EOF
+echo "Update complete"
+@EOF
 sudo chmod 744 ~/update.sh
 printf "Complete\n\n" | tee /dev/fd/3
 
@@ -396,7 +542,14 @@ sudo apt-get -y clean | echo_out
 sudo rm 70-u2f.rules | echo_out # May not exist
 printf "Complete\n\n" | tee /dev/fd/3
 
-printf "\n\tPress [Enter] to reboot\n" 1>&3
-read throwaway
+# Flatpak message
+if [[ ${PACKAGE} == "flatpak" ]]; then
+  printf "Flatpak apps will be visible in Launcher after reboot\n" | tee /dev/fd/3
+fi
 
-sudo reboot
+# Reboot by default
+if [[ REBOOT_COMPLETE == "true" ]]; then
+  printf "\n\tPress [Enter] to reboot\n" 1>&3
+  read throwaway
+  sudo reboot
+fi
