@@ -75,6 +75,10 @@ sudo R -e "IRkernel::installspec(user=FALSE)"
 ## Install Jupyter AI
 sudo /opt/jupyterhub/bin/python3 -m pip install jupyter-ai
 
+## Create groups for JupyterHub users and instructors
+sudo groupadd jupyterhub-users
+sudo groupadd jupyterhub-instructors
+
 ## Add /notebooks directory to all new users (and current user)
 sudo mkdir /etc/skel/notebooks
 mkdir ~/notebooks
@@ -244,6 +248,8 @@ sudo systemctl enable jupyterhub.service --now
 
 # sudo /opt/conda/envs/python/bin/python -m ipykernel install --prefix=/opt/jupyterhub/ --name 'python' --display-name "Python (conda)"
 
+# Fix for too many files open bug
+sudo /opt/jupyterhub/bin/python3 -m pip install --upgrade ipyflow jupyter_client jupyter_server jupyter_core tornado
 
 ## Add current hostname to /etc/hosts
 echo "Make sure your hostname is correct in /etc/hosts"

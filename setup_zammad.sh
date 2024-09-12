@@ -5,7 +5,7 @@ sudo apt-get -y install curl apt-transport-https gnupg
 
 # Set US_en locale
 sudo locale-gen en_US.UTF-8
-sudo echo "LANG=en_US.UTF-8" > /etc/default/locale
+echo "LANG=en_US.UTF-8" | sudo tee /etc/default/locale
 
 # Add Elasticsearch repository
 wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | \
