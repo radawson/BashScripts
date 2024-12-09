@@ -40,7 +40,7 @@ p_version=$(python3 --version | sed 's/Python //g' | cut -d. -f1,2)
 sudo apt-get -y install python${p_version}-venv
 
 ## Install nodejs
-curl -fsSL https://deb.nodesource.com/setup_21.x | sudo -E bash - &&\
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash - &&\
 sudo apt-get -y install nodejs
 
 ## Install configurable-proxy
