@@ -13,10 +13,13 @@ sudo apt-get -y dist-upgrade
 sudo apt-get -y autoremove
 sudo apt-get -y clean
 
-sudo apt-get -y install unattended-upgrades
 #sudo nano /etc/apt/apt.conf.d/20auto-upgrades
 #APT::Periodic::Update-Package-Lists "1";
 #APT::Periodic::Unattended-Upgrade "1";
+# install unattended-upgrades
+sudo apt-get -y install unattended-upgrades
+sudo sed -i "s/#APT::Periodic::Update-Package-Lists \"1\";/APT::Periodic::Update-Package-Lists \"1\";/g" /etc/apt/apt.conf.d/20auto-upgrades
+sudo sed -i "s/#APT::Periodic::Unattended-Upgrade \"1\";/APT::Periodic::Unattended-Upgrade \"1\";/g" /etc/apt/apt.conf.d/20auto-upgrades
 sudo dpkg-reconfigure -plow unattended-upgrades
 
 #sudo nano /etc/apt/apt.conf.d/50unattended-upgrades
@@ -62,6 +65,7 @@ sudo /opt/jupyterhub/bin/python3 -m pip install jupyterhub
 sudo /opt/jupyterhub/bin/python3 -m pip install jupyterlab notebook  # needed if running the notebook servers in the same environment
 sudo /opt/jupyterhub/bin/python3 -m pip install pycurl
 sudo /opt/jupyterhub/bin/python3 -m pip install ipywidgets
+sudo /opt/jupyterhub/bin/python3 -m pip install oauthenticator
 
 ## Install BASH kernel
 sudo /opt/jupyterhub/bin/python3 -m pip install bash_kernel

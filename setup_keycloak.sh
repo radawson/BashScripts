@@ -1,16 +1,18 @@
 #!/bin/bash
 
-## Install postgres 16
+
+## Install postgres 17
+PASSWORD=$(openssl rand -bse64 32)
 sudo apt-get install -y postgresql-common
-sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 sudo apt-get -y install postgresql
 
 sudo -u postgres createuser -s -i -d -r -l -w keycloak
-sudo -u postgres psql -c "ALTER ROLE keycloak WITH PASSWORD '';"
+sudo -u postgres psql -c "ALTER ROLE keycloak WITH PASSWORD '${PASSWORD}';"
 sudo -u postgres psql -c 'create database keycloak;'
+echo ${PASSWORD} > ~/postgres.pwd
 
 ## Install OpenJDK 21
-
 
 sudo apt-get -y install openjdk-21-jdk
 
@@ -26,6 +28,8 @@ EOF
 
 ## Install keycloak
 sudo apt-get install -y unzip
-wget https://github.com/keycloak/keycloak/releases/download/25.0.4/keycloak-25.0.4.zip
-unzip keycloak-25.0.4.zip
-rm keycloak-25.0.4.zip
+wget https://github.com/keycloak/keycloak/releases/download/26.0.7/keycloak-26.0.7.zip
+unzip keycloak-26.0.7.zip
+rm keycloak-26.0.7.zip
+
+sed 
