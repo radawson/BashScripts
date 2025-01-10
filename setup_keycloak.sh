@@ -116,7 +116,7 @@ sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${D
     echo "0 12 * * * /usr/bin/certbot renew --quiet"
 ) | sudo crontab -
 
-## Link certificates
+## Copy certificates
 sudo cp /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ~/keycloak-${VERSION}/conf/server.crt.pem
 sudo cp /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-${VERSION}/conf/server.key.pem
 sudo chown $USER:$USER ~/keycloak-${VERSION}/conf/server.*.pem
