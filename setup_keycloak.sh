@@ -1,10 +1,10 @@
 #!/bin/bash
 # (c) 2025 Rick Dawson
-# Usage: ./setup_keycloak.sh <domain>
-# Example: ./setup_keycloak.sh keycloak.example.com
+# Usage: ./setup_keycloak.sh <version> <domain>
+# Example: ./setup_keycloak.sh 26.0.7 keycloak.example.com
 
-
-DOMAIN="${1}"
+VERSION="${1}"
+DOMAIN="${2}"
 
 # Update system
 sudo apt-get update
@@ -90,9 +90,9 @@ sudo ufw --force enable
 
 ## Install keycloak
 sudo apt-get install -y unzip
-wget https://github.com/keycloak/keycloak/releases/download/26.0.7/keycloak-26.0.7.zip
-unzip keycloak-26.0.7.zip
-rm keycloak-26.0.7.zip
+wget https://github.com/keycloak/keycloak/releases/download/${VERSION}/keycloak-${VERSION}.zip
+unzip keycloak-${VERSION}.zip
+rm keycloak-${VERSION}.zip
 
 # Create initial user
 PASSWORD=$(openssl rand -base64 18)
@@ -101,13 +101,13 @@ export KC_BOOTSTRAP_ADMIN_USERNAME="admin"
 export KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
 
 ## Configure keycloak:
-sed -i 's|#db=postgres|db=postgres|' ~/keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#db-username=keycloak|db-username=keycloak|' ~/keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#db-password=password|db-password=${PASSWORD}|' ~/keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' ~/keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#keycloak-certificate-file=server.crt.pem|keycloak-certificate-file=server.crt.pem|' ~/keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#keycloak-certificate-key-file=server.key.pem|keycloak-certificate-key-file=server.key.pem|' ~/keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#proxy=reencrypt|proxy=reencrypt|' ~/keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db=postgres|db=postgres|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i 's|#db-username=keycloak|db-username=keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i 's|#db-password=password|db-password=${PASSWORD}|' ~/keycloak26.0.7/conf/keycloak.conf
+sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i 's|#keycloak-certificate-file=server.crt.pem|keycloak-certificate-file=server.crt.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i 's|#keycloak-certificate-key-file=server.key.pem|keycloak-certificate-key-file=server.key.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i 's|#proxy=reencrypt|proxy=reencrypt|' ~/keycloak-${VERSION}/conf/keycloak.conf
 
 # add LE certificates
 sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${DOMAIN}
@@ -117,10 +117,10 @@ sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${D
 ) | sudo crontab -
 
 ## Link certificates
-ln -s /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ~/keycloak-26.0.7/conf/server.crt.pem
-ln -s /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-26.0.7/conf/server.key.pem
-sudo chown keycloak:keycloak ~/keycloak-26.0.7/conf/server.*.pem
-sudo chmod 640 ~/keycloak-26.0.7/conf/server.*.pemm
+ln -s /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ~/keycloak-${VERSION}/conf/server.crt.pem
+ln -s /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-${VERSION}/conf/server.key.pem
+sudo chown $USER:$USER ~/keycloak-${VERSION}/conf/server.*.pem
+sudo chmod 640 ~/keycloak-${VERSION}/conf/server.*.pemm
 
 sudo tee /etc/systemd/system/keycloak.service <<EOF
 [Unit]
@@ -130,8 +130,8 @@ After=network.target
 [Service]
 Type=simple
 User=$USER
-WorkingDirectory=/home/$USER/keycloak-26.0.7
-ExecStart=/home/$USER/keycloak-26.0.7/bin/kc.sh start-dev
+WorkingDirectory=/home/$USER/keycloak-${VERSION}
+ExecStart=/home/$USER/keycloak-${VERSION}/bin/kc.sh start-dev
 Restart=always
 
 [Install]
@@ -143,5 +143,5 @@ sudo systemctl enable keycloak
 sudo systemctl start keycloak
 
 # Remove or comment out the manual start-dev call below
-# cd keycloak-26.0.7
+# cd keycloak-${VERSION}
 # ./bin/kc.sh start-dev
