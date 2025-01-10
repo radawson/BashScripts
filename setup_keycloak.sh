@@ -1,5 +1,12 @@
 #!/bin/bash
 
+# Update system
+sudo apt-get update
+sudo apt-get remove certbot -y
+sudo apt-get dist-upgrade -y
+sudo apt-get autoremove -y
+sudo apt-get autoclean -y
+
 ## Install postgres 17
 PASSWORD=$(openssl rand -base64 32)
 sudo apt-get install -y postgresql-common
@@ -24,6 +31,11 @@ sudo tee -a /etc/skel/.bashrc <<EOF
 export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
 export PATH=\$PATH:\$JAVA_HOME/bin
 EOF
+
+# Certbot (snap)
+sudo apt-get install -y snapd
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
 # Install nginx
 sudo apt-get install nginx -y
@@ -78,6 +90,7 @@ rm keycloak-26.0.7.zip
 
 # Create initial user
 PASSWORD=$(openssl rand -base64 18)
+echo "Admin password: ${PASSWORD}" > ~/keycloak.pwd
 export KEYCLOAK_ADMIN="admin"
 export KEYCLOAK_ADMIN_PASSWORD="${PASSWORD}"
 
