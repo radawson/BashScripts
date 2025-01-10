@@ -101,11 +101,13 @@ export KC_BOOTSTRAP_ADMIN_USERNAME="admin"
 export KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
 
 ## Configure keycloak:
-sed -i 's|#db=postgres|db=postgres|' /keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#db-username=keycloak|db-username=keycloak|' /keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#db-password=password|db-password=${PASSWORD}|' /keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' /keycloak26.0.6/conf/keycloak.conf
-sed -i 's|#proxy=reencrypt|proxy=reencrypt|' /keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db=postgres|db=postgres|' ~/keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db-username=keycloak|db-username=keycloak|' ~/keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db-password=password|db-password=${PASSWORD}|' ~/keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' ~/keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#keycloak-certificate-file=server.crt.pem|keycloak-certificate-file=server.crt.pem|' ~/keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#keycloak-certificate-key-file=server.key.pem|keycloak-certificate-key-file=server.key.pem|' ~/keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#proxy=reencrypt|proxy=reencrypt|' ~/keycloak26.0.6/conf/keycloak.conf
 
 # add LE certificates
 sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${DOMAIN}
@@ -113,6 +115,12 @@ sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${D
     sudo crontab -l 2>/dev/null
     echo "0 12 * * * /usr/bin/certbot renew --quiet"
 ) | sudo crontab -
+
+## Link certificates
+ln -s /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ~/keycloak-26.0.7/conf/server.crt.pem
+ln -s /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-26.0.7/conf/server.key.pem
+sudo chown keycloak:keycloak ~/keycloak-26.0.7/conf/server.*.pem
+sudo chmod 640 ~/keycloak-26.0.7/conf/server.*.pemm
 
 sudo tee /etc/systemd/system/keycloak.service <<EOF
 [Unit]
