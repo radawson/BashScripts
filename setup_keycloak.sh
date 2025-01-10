@@ -95,7 +95,7 @@ unzip keycloak-${VERSION}.zip
 rm keycloak-${VERSION}.zip
 
 # Create initial user
-PASSWORD=$(openssl rand -base64 18)
+PASSWORD=$(openssl rand 18 | base64 | tr -dc 'A-Za-z0-9')
 echo "Admin password: ${PASSWORD}" > ~/keycloak.pwd
 export KC_BOOTSTRAP_ADMIN_USERNAME="admin"
 export KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
@@ -103,10 +103,10 @@ export KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
 ## Configure keycloak:
 sed -i 's|#db=postgres|db=postgres|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#db-username=keycloak|db-username=keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
-sed -i 's|#db-password=password|db-password=${PASSWORD}|' ~/keycloak26.0.7/conf/keycloak.conf
+sed -i "s|#db-password=password|db-password=${PASSWORD}|" ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
-sed -i 's|#keycloak-certificate-file=server.crt.pem|keycloak-certificate-file=server.crt.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
-sed -i 's|#keycloak-certificate-key-file=server.key.pem|keycloak-certificate-key-file=server.key.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i 's|#https-certificate-file=${kc.home.dir}conf/server.crt.pem|https-certificate-file=${kc.home.dir}conf/server.crt.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i 's|#https-certificate-key-file=${kc.home.dir}conf/server.key.pem|https-certificate-key-file=${kc.home.dir}conf/server.key.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#proxy=reencrypt|proxy=reencrypt|' ~/keycloak-${VERSION}/conf/keycloak.conf
 
 # add LE certificates
