@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ## Install postgres 17
-PASSWORD=$(openssl rand -bse64 32)
+PASSWORD=$(openssl rand -base64 32)
 sudo apt-get install -y postgresql-common
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 sudo apt-get -y install postgresql
@@ -25,6 +25,10 @@ export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
 export PATH=\$PATH:\$JAVA_HOME/bin
 EOF
 
+## Open firewall (temporary)
+sudo ufw allow 8080
+sudo ufw --force enable
+
 ## Install keycloak
 sudo apt-get install -y unzip
 wget https://github.com/keycloak/keycloak/releases/download/26.0.7/keycloak-26.0.7.zip
@@ -32,6 +36,9 @@ unzip keycloak-26.0.7.zip
 rm keycloak-26.0.7.zip
 
 # Create initial user
-PASSWORD=$(openssl rand -bse64 18)
+PASSWORD=$(openssl rand -base64 18)
 KC_BOOTSTRAP_ADMIN_USERNAME="admin"
 KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
+
+cd keycloak-26.0.7
+./bin/kc.sh start-dev
