@@ -1,6 +1,5 @@
 #!/bin/bash
 
-
 ## Install postgres 17
 PASSWORD=$(openssl rand -bse64 32)
 sudo apt-get install -y postgresql-common
@@ -32,4 +31,7 @@ wget https://github.com/keycloak/keycloak/releases/download/26.0.7/keycloak-26.0
 unzip keycloak-26.0.7.zip
 rm keycloak-26.0.7.zip
 
-sed 
+# Create initial user
+PASSWORD=$(openssl rand -bse64 18)
+KC_BOOTSTRAP_ADMIN_USERNAME="admin"
+KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
