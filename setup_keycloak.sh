@@ -23,7 +23,7 @@ sudo -u postgres createuser -s -i -d -r -l -w keycloak
 sudo -u postgres psql -c "ALTER ROLE keycloak WITH PASSWORD '${DB_PASSWORD}';"
 sudo -u postgres psql -c 'create database keycloak;'
 sudo -u postgres psql -c 'grant all privileges on database keycloak to keycloak;'
-echo ${DB_PASSWORD} > ~/postgres.pwd
+echo "Database password: ${DB_PASSWORD}" > ~/startup.txt
 
 ## Install OpenJDK 21
 sudo apt-get -y install openjdk-21-jdk
@@ -97,14 +97,14 @@ rm keycloak-${VERSION}.zip
 
 # Create initial user
 PASSWORD=$(openssl rand 18 | base64 | tr -dc 'A-Za-z0-9')
-echo "Admin password: ${PASSWORD}" > ~/keycloak.pwd
+echo "Admin password: ${PASSWORD}" >> ~/startup.txt
 export KC_BOOTSTRAP_ADMIN_USERNAME="admin"
 export KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
 
 ## Configure keycloak:
 sed -i 's|#db=postgres|db=postgres|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#db-username=keycloak|db-username=keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
-sed -i "s|#db-password=password|db-password=${PASSWORD}|" ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i "s|#db-password=password|db-password=${DB_PASSWORD}|" ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i "s|#https-certificate-file=${kc.home.dir}conf/server.crt.pem|https-certificate-file=${HOME}/keycloak-${VERSION}/conf/server.crt.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i "s|#https-certificate-key-file=${kc.home.dir}conf/server.key.pem|https-certificate-key-file=${HOME}/keycloak-${VERSION}/conf/server.key.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
