@@ -1,4 +1,10 @@
 #!/bin/bash
+# (c) 2025 Rick Dawson
+# Usage: ./setup_keycloak.sh <domain>
+# Example: ./setup_keycloak.sh keycloak.example.com
+
+
+DOMAIN="${1}"
 
 # Update system
 sudo apt-get update
@@ -16,6 +22,7 @@ sudo apt-get -y install postgresql
 sudo -u postgres createuser -s -i -d -r -l -w keycloak
 sudo -u postgres psql -c "ALTER ROLE keycloak WITH PASSWORD '${PASSWORD}';"
 sudo -u postgres psql -c 'create database keycloak;'
+sudo -u postgres psql -c 'grant all privileges on database keycloak to keycloak;'
 echo ${PASSWORD} > ~/postgres.pwd
 
 ## Install OpenJDK 21
@@ -94,6 +101,12 @@ echo "Admin password: ${PASSWORD}" > ~/keycloak.pwd
 export KEYCLOAK_ADMIN="admin"
 export KEYCLOAK_ADMIN_PASSWORD="${PASSWORD}"
 
+# add LE certificates
+sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${DOMAIN}
+(
+    sudo crontab -l 2>/dev/null
+    echo "0 12 * * * /usr/bin/certbot renew --quiet"
+) | sudo crontab -
 
 cd keycloak-26.0.7
 ./bin/kc.sh start-dev
