@@ -117,8 +117,8 @@ sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${D
 ) | sudo crontab -
 
 ## Link certificates
-ln -s /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ~/keycloak-${VERSION}/conf/server.crt.pem
-ln -s /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-${VERSION}/conf/server.key.pem
+sudo cp /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ~/keycloak-${VERSION}/conf/server.crt.pem
+sudo cp /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-${VERSION}/conf/server.key.pem
 sudo chown $USER:$USER ~/keycloak-${VERSION}/conf/server.*.pem
 sudo chmod 640 ~/keycloak-${VERSION}/conf/server.*.pem
 
@@ -143,5 +143,4 @@ sudo systemctl enable keycloak
 sudo systemctl start keycloak
 
 # Remove or comment out the manual start-dev call below
-# cd keycloak-${VERSION}
-# ./bin/kc.sh start-dev
+# ./keycloak-${VERSION}/bin/kc.sh start-dev
