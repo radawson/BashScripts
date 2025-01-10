@@ -25,7 +25,48 @@ export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))
 export PATH=\$PATH:\$JAVA_HOME/bin
 EOF
 
+# Install nginx
+sudo apt-get install nginx -y
+
+# Set up nginx proxy
+sudo tee /etc/nginx/sites-available/default <<'EOF'
+server {
+    listen 80 default_server;
+    listen [::]:80 default_server;
+
+    # Accept all server names
+    server_name _;
+
+    # Basic timeouts for security
+    client_body_timeout 10s;
+    client_header_timeout 10s;
+    keepalive_timeout 5s 5s;
+    send_timeout 10s;
+
+    location / {
+        # Proper IP forwarding
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host $http_host;
+        
+        # Security headers
+        proxy_hide_header X-Powered-By;
+        add_header X-Frame-Options "SAMEORIGIN";
+        add_header X-XSS-Protection "1; mode=block";
+        add_header X-Content-Type-Options "nosniff";
+        
+        proxy_redirect off;
+        proxy_pass http://127.0.0.1:8080;
+    }
+}
+EOF
+
+sudo systemctl restart nginx
+
 ## Open firewall (temporary)
+sudo ufw allow http
+sudo ufw allow https
 sudo ufw allow 8080
 sudo ufw --force enable
 
@@ -37,8 +78,9 @@ rm keycloak-26.0.7.zip
 
 # Create initial user
 PASSWORD=$(openssl rand -base64 18)
-KC_BOOTSTRAP_ADMIN_USERNAME="admin"
-KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
+export KEYCLOAK_ADMIN="admin"
+export KEYCLOAK_ADMIN_PASSWORD="${PASSWORD}"
+
 
 cd keycloak-26.0.7
 ./bin/kc.sh start-dev
