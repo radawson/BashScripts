@@ -120,7 +120,7 @@ sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${D
 ln -s /etc/letsencrypt/live/${DOMAIN}/fullchain.pem ~/keycloak-${VERSION}/conf/server.crt.pem
 ln -s /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-${VERSION}/conf/server.key.pem
 sudo chown $USER:$USER ~/keycloak-${VERSION}/conf/server.*.pem
-sudo chmod 640 ~/keycloak-${VERSION}/conf/server.*.pemm
+sudo chmod 640 ~/keycloak-${VERSION}/conf/server.*.pem
 
 sudo tee /etc/systemd/system/keycloak.service <<EOF
 [Unit]
