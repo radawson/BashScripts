@@ -14,16 +14,16 @@ sudo apt-get autoremove -y
 sudo apt-get autoclean -y
 
 ## Install postgres 17
-PASSWORD=$(openssl rand -base64 32)
+DB_PASSWORD=$(openssl rand 18 | base64 | tr -dc 'A-Za-z0-9')
 sudo apt-get install -y postgresql-common
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 sudo apt-get -y install postgresql
 
 sudo -u postgres createuser -s -i -d -r -l -w keycloak
-sudo -u postgres psql -c "ALTER ROLE keycloak WITH PASSWORD '${PASSWORD}';"
+sudo -u postgres psql -c "ALTER ROLE keycloak WITH PASSWORD '${DB_PASSWORD}';"
 sudo -u postgres psql -c 'create database keycloak;'
 sudo -u postgres psql -c 'grant all privileges on database keycloak to keycloak;'
-echo ${PASSWORD} > ~/postgres.pwd
+echo ${DB_PASSWORD} > ~/postgres.pwd
 
 ## Install OpenJDK 21
 sudo apt-get -y install openjdk-21-jdk
