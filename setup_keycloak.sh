@@ -26,7 +26,6 @@ sudo -u postgres psql -c 'grant all privileges on database keycloak to keycloak;
 echo ${PASSWORD} > ~/postgres.pwd
 
 ## Install OpenJDK 21
-
 sudo apt-get -y install openjdk-21-jdk
 
 cat <<EOF >> ~/.bashrc
@@ -98,8 +97,15 @@ rm keycloak-26.0.7.zip
 # Create initial user
 PASSWORD=$(openssl rand -base64 18)
 echo "Admin password: ${PASSWORD}" > ~/keycloak.pwd
-export KEYCLOAK_ADMIN="admin"
-export KEYCLOAK_ADMIN_PASSWORD="${PASSWORD}"
+export KC_BOOTSTRAP_ADMIN_USERNAME="admin"
+export KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
+
+## Configure keycloak:
+sed -i 's|#db=postgres|db=postgres|' /keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db-username=keycloak|db-username=keycloak|' /keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db-password=password|db-password=${PASSWORD}|' /keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' /keycloak26.0.6/conf/keycloak.conf
+sed -i 's|#proxy=reencrypt|proxy=reencrypt|' /keycloak26.0.6/conf/keycloak.conf
 
 # add LE certificates
 sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${DOMAIN}
@@ -108,5 +114,26 @@ sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${D
     echo "0 12 * * * /usr/bin/certbot renew --quiet"
 ) | sudo crontab -
 
-cd keycloak-26.0.7
-./bin/kc.sh start-dev
+sudo tee /etc/systemd/system/keycloak.service <<EOF
+[Unit]
+Description=Keycloak Service
+After=network.target
+
+[Service]
+Type=simple
+User=$USER
+WorkingDirectory=/home/$USER/keycloak-26.0.7
+ExecStart=/home/$USER/keycloak-26.0.7/bin/kc.sh start-dev
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo systemctl daemon-reload
+sudo systemctl enable keycloak
+sudo systemctl start keycloak
+
+# Remove or comment out the manual start-dev call below
+# cd keycloak-26.0.7
+# ./bin/kc.sh start-dev
