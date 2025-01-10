@@ -83,6 +83,7 @@ EOF
 sudo systemctl restart nginx
 
 ## Open firewall (temporary)
+sudo ufw allow ssh
 sudo ufw allow http
 sudo ufw allow https
 sudo ufw allow 8080
@@ -122,21 +123,21 @@ sudo cp /etc/letsencrypt/live/${DOMAIN}/privkey.pem ~/keycloak-${VERSION}/conf/s
 sudo chown $USER:$USER ~/keycloak-${VERSION}/conf/server.*.pem
 sudo chmod 640 ~/keycloak-${VERSION}/conf/server.*.pem
 
-sudo tee /etc/systemd/system/keycloak.service <<EOF
+sudo bash -c "cat <<EOF > /etc/systemd/system/keycloak.service
 [Unit]
 Description=Keycloak Service
 After=network.target
 
 [Service]
 Type=simple
-User=$USER
-WorkingDirectory=/home/$USER/keycloak-${VERSION}
-ExecStart=/home/$USER/keycloak-${VERSION}/bin/kc.sh start-dev
+User=${USER}
+WorkingDirectory=/home/{$USER}/keycloak-${VERSION}
+ExecStart=/home/${USER}/keycloak-${VERSION}/bin/kc.sh start-dev
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
-EOF
+EOF"
 
 sudo systemctl daemon-reload
 sudo systemctl enable keycloak
