@@ -107,7 +107,7 @@ sed -i 's|#db-username=keycloak|db-username=keycloak|' ~/keycloak-${VERSION}/con
 sed -i "s|#db-password=password|db-password=${DB_PASSWORD}|" ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i "s|#https-certificate-file=\${kc.home.dir}conf/server.crt.pem|https-certificate-file=${HOME}/keycloak-${VERSION}/conf/server.crt.pem|" ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i "s|#https-certificate-key-file=\${kc.home.dir}conf/server.key.pem|https-certificate-key-file=${HOME}/keycloak-${VERSION}/conf/server.key.pem|" ~/keycloak-${VERSION}/conf/keycloak.conf
-sed -i "s|#https-certificate-key-file=${kc.home.dir}conf/server.key.pem|https-certificate-key-file=${HOME}/keycloak-${VERSION}/conf/server.key.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i "s|#https-certificate-key-file=\${kc.home.dir}conf/server.key.pem|https-certificate-key-file=${HOME}/keycloak-${VERSION}/conf/server.key.pem|" ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#proxy=reencrypt|proxy=reencrypt|' ~/keycloak-${VERSION}/conf/keycloak.conf
 
 ## Update buffer sizes for clustering
