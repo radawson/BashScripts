@@ -105,10 +105,18 @@ export KC_BOOTSTRAP_ADMIN_PASSWORD="${PASSWORD}"
 sed -i 's|#db=postgres|db=postgres|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#db-username=keycloak|db-username=keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i "s|#db-password=password|db-password=${DB_PASSWORD}|" ~/keycloak-${VERSION}/conf/keycloak.conf
-sed -i 's|#db-url=jdbc:postgresql://localhost/keycloak|db-url=jdbc:postgresql://localhost/keycloak|' ~/keycloak-${VERSION}/conf/keycloak.conf
-sed -i "s|#https-certificate-file=${kc.home.dir}conf/server.crt.pem|https-certificate-file=${HOME}/keycloak-${VERSION}/conf/server.crt.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i "s|#https-certificate-file=\${kc.home.dir}conf/server.crt.pem|https-certificate-file=${HOME}/keycloak-${VERSION}/conf/server.crt.pem|" ~/keycloak-${VERSION}/conf/keycloak.conf
+sed -i "s|#https-certificate-key-file=\${kc.home.dir}conf/server.key.pem|https-certificate-key-file=${HOME}/keycloak-${VERSION}/conf/server.key.pem|" ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i "s|#https-certificate-key-file=${kc.home.dir}conf/server.key.pem|https-certificate-key-file=${HOME}/keycloak-${VERSION}/conf/server.key.pem|' ~/keycloak-${VERSION}/conf/keycloak.conf
 sed -i 's|#proxy=reencrypt|proxy=reencrypt|' ~/keycloak-${VERSION}/conf/keycloak.conf
+
+## Update buffer sizes for clustering
+sudo bash -c "cat <<EOF >> /etc/sysctl.conf
+net.core.rmem_max = 26214400
+net.core.wmem_max = 1048576
+EOF"
+
+sudo sysctl -p
 
 # add LE certificates
 sudo certbot --nginx -d ${DOMAIN} --non-interactive --agree-tos -m webmaster@${DOMAIN}
@@ -131,8 +139,8 @@ After=network.target
 [Service]
 Type=simple
 User=${USER}
-WorkingDirectory=/home/{$USER}/keycloak-${VERSION}
-ExecStart=/home/${USER}/keycloak-${VERSION}/bin/kc.sh start-dev
+WorkingDirectory=${HOME}/keycloak-${VERSION}
+ExecStart=${HOME}/keycloak-${VERSION}/bin/kc.sh start-dev
 Restart=always
 
 [Install]
