@@ -1,7 +1,7 @@
 #!/bin/bash
 # Ubuntu VM desktop setup script
 # R. Dawson 2021-2023
-VERSION="2.9.0"
+VERSION="2.10.0"
 
 ## Variables
 #TODO: ADAPTER: This works for a VM, but needs a better method
@@ -176,6 +176,10 @@ install_protonvpn () {
   printf "ProtonVPN Installation Complete.\n\n" | tee /dev/fd/3
 }
 
+install_signal() {
+  printf "Installing ProtonVPNclient.\n" | tee /dev/fd/3
+}
+
 install_wifi_tools() {
   printf "Installing WiFi tools.\n" | tee /dev/fd/3
   wget -O - https://www.kismetwireless.net/repos/kismet-release.gpg.key | sudo tee /etc/apt/trusted.gpg.d/kismet.asc | echo_out
@@ -211,7 +215,7 @@ usage() {
   echo "-j      Install default JRE."
   echo "-p      VPN_NAME	  Install VPN client(s) or 'all'."
   echo "-r      Install and enable RDP."
-  echo "-s			Install Snaps (not flatpak)"
+  echo "-s			Install Snaps (not flatpaks)"
   echo "-v 			Verbose mode."
   echo "-w			WiFi tools (kismet)."
   exit 1
