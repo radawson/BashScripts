@@ -50,41 +50,9 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 # Install nginx
 sudo apt-get install nginx -y
 
-# Set up nginx proxy
-sudo tee /etc/nginx/sites-available/default <<'EOF'
-server {
-    listen 80 default_server;
-    listen [::]:80 default_server;
-
-    # Accept all server names
-    server_name _;
-
-    # Basic timeouts for security
-    client_body_timeout 10s;
-    client_header_timeout 10s;
-    keepalive_timeout 5s 5s;
-    send_timeout 10s;
-
-    location / {
-        # Proper IP forwarding
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Host $http_host;
-        
-        # Security headers
-        proxy_hide_header X-Powered-By;
-        add_header X-Frame-Options "SAMEORIGIN";
-        add_header X-XSS-Protection "1; mode=block";
-        add_header X-Content-Type-Options "nosniff";
-        
-        proxy_redirect off;
-        proxy_pass http://127.0.0.1:8080;
-    }
-}
-EOF
-
-sudo systemctl restart nginx
+# Install Openfire
+wget https://www.igniterealtime.org/downloadServlet?filename=openfire/openfire_4.9.2_all.deb
+sudo dpkg -i openfire_4.9.2_all.deb
 
 ## Open firewall (temporary)
 sudo ufw allow ssh
