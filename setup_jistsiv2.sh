@@ -53,7 +53,7 @@ sudo apt-add-repository ppa:andrei-pozolotin/maven3
 # Add PostgreSQL repository
 echo "Adding PostgreSQL repository"
 sudo apt install -y postgresql-common
-sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 
 # Add Jitsi repository
 echo "Adding Jitsi repository"
@@ -126,6 +126,10 @@ EOF
 
 echo "Saving Jitsi configuration"
 # TODO: Save Jitsi configuration to file
+cat <<EOF > ~/server_config.txt
+-- Jitsi Configuration --
+
+EOF
 
 # Save database credentials to a file for reference
 echo "Saving database credentials"
