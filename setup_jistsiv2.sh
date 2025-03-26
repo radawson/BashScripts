@@ -1,7 +1,9 @@
 #!/bin/bash
 
-FQDN = ${1}
-IP = ${2}
+FQDN=${1}
+IP=${2}
+# Generate a secure random password (16 chars, alphanumeric only)
+DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 
 ## System Preparation
 # Update and upgrade the system
@@ -82,3 +84,56 @@ sudo apt-get -y install jitsi-meet
 echo "Installing OpenFire"
 wget https://www.igniterealtime.org/downloadServlet?filename=openfire/openfire_4.9.2_all.deb -O openfire.deb
 sudo apt install -y ./openfire.deb
+
+## Software configuration
+# Configure PostgreSQL
+echo "Configuring PostgreSQL"
+sudo -u postgres psql -e "CREATE USER openfire WITH PASSWORD '${DB_PASSWORD}';"
+sudo -u postgres psql -e "CREATE DATABASE openfire;"
+sudo -u postgres psql -e "GRANT ALL PRIVILEGES ON DATABASE openfire TO openfire;"
+sudo -u postgres psql -e "ALTER USER openfire WITH SUPERUSER;"
+
+# Configure Nginx for Openfire
+echo "Configuring Nginx for Openfire"
+cat <<EOF | sudo tee /etc/nginx/sites-available/openfire
+server {
+    listen 80;
+    server_name ${FQDN};
+
+    location /openfire {
+        proxy_pass http://localhost:9090;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+
+# Enable the Nginx site
+sudo ln -sf /etc/nginx/sites-available/openfire /etc/nginx/sites-enabled/
+sudo systemctl reload nginx
+
+## Write Configuration to File
+# Save host data to file for reference
+echo "Saving host data"
+cat <<EOF > ~/server_config.txt
+-- Server Configuration --
+FQDN: ${FQDN}
+IP Address: ${IP}
+
+EOF
+
+echo "Saving Jitsi configuration"
+# TODO: Save Jitsi configuration to file
+
+# Save database credentials to a file for reference
+echo "Saving database credentials"
+cat <<EOF > ~/server_config.txt
+-- Database Configuration --
+Database User: openfire
+Database Name: openfire
+Database Password: ${DB_PASSWORD}
+EOF
+chmod 600 ~/server_config.txt
+echo "Database credentials saved to ~/server_config.txt"
