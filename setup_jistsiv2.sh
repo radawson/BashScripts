@@ -1,14 +1,16 @@
 #!/bin/bash
 
 if [[ $# -ne 2 ]]; then
-    echo "Usage: $0 <FQDN> <IP>"
+    echo "Usage: $0 <DNS DOMAIN> <IP>"
     exit 1
 fi
 
-FQDN=${1}
+DOMAIN=${1}
 IP=${2}
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+FQDN="meet.${DOMAIN}"
+OF_FQDN="openfire.${DOMAIN}"
 
 ## System Preparation
 # Update and upgrade the system
@@ -21,6 +23,7 @@ sudo apt-get -y autoremove
 echo "Setting hostname"
 sudo hostnamectl hostname ${FQDN}
 echo "${IP} ${FQDN}" | sudo tee -a /etc/hosts
+echo "${IP} ${OF_FQDN}" | sudo tee -a /etc/hosts
 
 # Configure Firewall
 echo "Configuring firewall"
@@ -53,7 +56,7 @@ sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 # Add Jitsi repository
 echo "Adding Jitsi repository"
 curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
-echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list > /dev/null
+echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list >/dev/null
 
 # Update package list
 sudo apt-get update
@@ -61,12 +64,12 @@ sudo apt-get update
 ## Software Installation
 # Install OpenJDK
 echo "Installing OpenJDK"
-sudo apt-get -y install openjdk-22-jdk
+sudo apt-get -y install openjdk-24-jdk
 
 # Set JAVA_HOME
 echo "Setting JAVA_HOME"
-echo "export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> ~/.bashrc
-echo "export PATH=$PATH:$JAVA_HOME/bin" >> ~/.bashrc
+echo "export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >>~/.bashrc
+echo "export PATH=$PATH:$JAVA_HOME/bin" >>~/.bashrc
 source ~/.bashrc
 
 # Install Maven
@@ -81,6 +84,10 @@ sudo apt-get -y install postgresql
 echo "Installing Jitsi"
 sudo apt-get -y install jitsi-meet
 
+# Shut down prosody to prevent conflicts with OpenFire
+sudo systemctl stop prosody
+sudo systemctl disable prosody
+
 # Install OpenFire
 echo "Installing OpenFire"
 wget https://www.igniterealtime.org/downloadServlet?filename=openfire/openfire_4.9.2_all.deb -O openfire.deb
@@ -91,7 +98,7 @@ sudo apt install -y ./openfire.deb
 echo "Configuring PostgreSQL"
 sudo -u postgres psql -c "CREATE USER openfire WITH PASSWORD '${DB_PASSWORD}';"
 sudo -u postgres psql -c "CREATE DATABASE openfire;"
-sudo -u postgres psql -c"GRANT ALL PRIVILEGES ON DATABASE openfire TO openfire;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE openfire TO openfire;"
 sudo -u postgres psql -c "ALTER USER openfire WITH SUPERUSER;"
 
 # Configure Nginx for Openfire
@@ -99,10 +106,10 @@ echo "Configuring Nginx for Openfire"
 cat <<EOF | sudo tee /etc/nginx/sites-available/openfire
 server {
     listen 80;
-    server_name ${FQDN};
+    server_name ${OF_FQDN};
 
-    location /openfire {
-        proxy_pass http://localhost:9090;
+    location / {
+        proxy_pass http://localhost:9997;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
@@ -115,10 +122,58 @@ EOF
 sudo ln -sf /etc/nginx/sites-available/openfire /etc/nginx/sites-enabled/
 sudo systemctl reload nginx
 
+# Autosetup for OpenFire
+echo "Creating autosetup file for OpenFire"
+cat <<EOF >~/openfire.xml
+<autosetup>
+  <jive>
+    <adminConsole>
+      <!-- Disable either port by setting the value to -1 -->
+      <port>9997</port>
+      <securePort>-1</securePort>
+      <interface>127.0.0.1</interface>
+    </adminConsole>
+  </jive>
+        <run>true</run>
+        <locale>en</locale>
+        <xmpp>
+            <domain>${OF_FQDN}</domain>
+            <fqdn>${OF_FQDN}</fqdn>
+            <auth>
+                <anonymous>true</anonymous>
+            </auth>
+            <socket>
+                <ssl>
+                    <active>true</active>
+                </ssl>
+            </socket>
+        </xmpp>
+        <database>
+            <mode>standard</mode>
+            <defaultProvider>
+                <driver>org.postgresql.Driver</driver>
+                <serverURL>jdbc:postgresql://localhost:5432/openfire</serverURL>
+                <username>openfire</username>
+                <password>${DB_PASSWORD}</password>
+                <minConnections>5</minConnections>
+                <maxConnections>25</maxConnections>
+                <connectionTimeout>1.0</connectionTimeout>
+            </defaultProvider>
+        </database>
+        <admin>
+            <email>admin@techopsgroup.com</email>
+        <password>P@\$\$word01</password>
+        </admin>
+        <authprovider>
+            <mode>default</mode>
+        </authprovider>
+    </autosetup>
+EOF
+
 ## Write Configuration to File
 # Save host data to file for reference
 echo "Saving host data"
-cat <<EOF > ~/server_config.txt
+cat <<EOF >~/server_config.txt
 -- Server Configuration --
 FQDN: ${FQDN}
 IP Address: ${IP}
@@ -127,14 +182,14 @@ EOF
 
 echo "Saving Jitsi configuration"
 # TODO: Save Jitsi configuration to file
-cat <<EOF >> ~/server_config.txt
+cat <<EOF >>~/server_config.txt
 -- Jitsi Configuration --
 
 EOF
 
 # Save database credentials to a file for reference
 echo "Saving database credentials"
-cat <<EOF >> ~/server_config.txt
+cat <<EOF >>~/server_config.txt
 -- Database Configuration --
 Database User: openfire
 Database Name: openfire
