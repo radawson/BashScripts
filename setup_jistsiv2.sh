@@ -103,7 +103,7 @@ sudo -u postgres psql -c "ALTER USER openfire WITH SUPERUSER;"
 
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
-cat <<EOF | sudo tee /etc/nginx/sites-available/openfire
+cat <<EOF | sudo tee /etc/nginx/sites-available/openfire.conf
 server {
     listen 80;
     server_name ${OF_FQDN};
@@ -124,18 +124,17 @@ sudo systemctl reload nginx
 
 # Autosetup for OpenFire
 echo "Creating autosetup file for OpenFire"
-cat <<EOF >~/openfire.xml
+cat <<EOF | sudo tee/etc/openfire/openfire.xml
+<?xml version="1.0" encoding="UTF-8"?>
 <autosetup>
-  <jive>
+  <run>true</run>
+  <locale>en</locale>
     <adminConsole>
       <!-- Disable either port by setting the value to -1 -->
       <port>9997</port>
       <securePort>-1</securePort>
       <interface>127.0.0.1</interface>
     </adminConsole>
-  </jive>
-        <run>true</run>
-        <locale>en</locale>
         <xmpp>
             <domain>${OF_FQDN}</domain>
             <fqdn>${OF_FQDN}</fqdn>
@@ -162,11 +161,25 @@ cat <<EOF >~/openfire.xml
         </database>
         <admin>
             <email>admin@techopsgroup.com</email>
-        <password>P@\$\$word01</password>
+        <password>PASSword01</password>
         </admin>
         <authprovider>
             <mode>default</mode>
         </authprovider>
+        <users>
+            <user1> <!-- Use incremental numbers for more users, eg: user2, user3 -->
+                <username>admin</username> <!-- Required -->
+                <password>PASSword01</password> <!-- Required -->
+                <name>Jane Doe</name>
+                <email>user1@example.org</email>
+                <roster>
+                    <item1> <!-- Use incremental numbers for more items, eg: item2, item3 -->
+                        <jid>john@example.com</jid>
+                        <nickname>John</nickname>
+                    </item1>
+                </roster>
+            </user1>
+        </users>
     </autosetup>
 EOF
 
