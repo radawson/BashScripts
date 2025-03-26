@@ -48,6 +48,11 @@ source ~/.bashrc
 echo "Adding Maven repository"
 sudo apt-add-repository ppa:andrei-pozolotin/maven3
 
+# Add PostgreSQL repository
+echo "Adding PostgreSQL repository"
+sudo apt install -y postgresql-common
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+
 # Add Jitsi repository
 echo "Adding Jitsi repository"
 curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
@@ -65,6 +70,15 @@ sudo apt-get -y install openjdk-22-jdk
 echo "Installing Maven"
 sudo apt-get -y install maven
 
+# Install PostgreSQL
+echo "Installing PostgreSQL"
+sudo apt-get -y install postgresql
+
 # Install Jitsi
 echo "Installing Jitsi"
 sudo apt-get -y install jitsi-meet
+
+# Install OpenFire
+echo "Installing OpenFire"
+wget https://www.igniterealtime.org/downloadServlet?filename=openfire/openfire_4.9.2_all.deb -O openfire.deb
+sudo apt install -y ./openfire.deb
