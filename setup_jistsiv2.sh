@@ -20,7 +20,7 @@ sudo apt-get -y autoremove
 # Set hostname in two locations
 echo "Setting hostname"
 sudo hostnamectl hostname ${FQDN}
-sudo echo "${IP} ${FQDN}" >> /etc/hosts
+echo "${IP} ${FQDN}" | sudo tee -a /etc/hosts
 
 # Configure Firewall
 echo "Configuring firewall"
@@ -89,10 +89,10 @@ sudo apt install -y ./openfire.deb
 ## Software configuration
 # Configure PostgreSQL
 echo "Configuring PostgreSQL"
-sudo -u postgres psql -e "CREATE USER openfire WITH PASSWORD '${DB_PASSWORD}';"
-sudo -u postgres psql -e "CREATE DATABASE openfire;"
-sudo -u postgres psql -e "GRANT ALL PRIVILEGES ON DATABASE openfire TO openfire;"
-sudo -u postgres psql -e "ALTER USER openfire WITH SUPERUSER;"
+sudo -u postgres psql -c "CREATE USER openfire WITH PASSWORD '${DB_PASSWORD}';"
+sudo -u postgres psql -c "CREATE DATABASE openfire;"
+sudo -u postgres psql -c"GRANT ALL PRIVILEGES ON DATABASE openfire TO openfire;"
+sudo -u postgres psql -c "ALTER USER openfire WITH SUPERUSER;"
 
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
