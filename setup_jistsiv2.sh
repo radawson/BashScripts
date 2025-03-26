@@ -127,14 +127,14 @@ EOF
 
 echo "Saving Jitsi configuration"
 # TODO: Save Jitsi configuration to file
-cat <<EOF > ~/server_config.txt
+cat <<EOF >> ~/server_config.txt
 -- Jitsi Configuration --
 
 EOF
 
 # Save database credentials to a file for reference
 echo "Saving database credentials"
-cat <<EOF > ~/server_config.txt
+cat <<EOF >> ~/server_config.txt
 -- Database Configuration --
 Database User: openfire
 Database Name: openfire
