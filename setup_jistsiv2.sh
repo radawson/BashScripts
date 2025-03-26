@@ -103,6 +103,7 @@ sudo -u postgres psql -c "ALTER USER openfire WITH SUPERUSER;"
 
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
+CERT_LINE=$(cat /etc/nginx/sites-available/meet.techopsgroup.com.conf | grep ssl_certificate)
 cat <<EOF | sudo tee /etc/nginx/sites-available/openfire.conf
 server {
     listen 80;
@@ -116,6 +117,29 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name meet.techopsgroup.com;
+
+    # Mozilla Guideline v5.4, nginx 1.17.7, OpenSSL 1.1.1d, intermediate configuration
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m;  # about 40000 sessions
+    ssl_session_tickets off;
+
+    ${CERT_LINE}
+
+    location / {
+        proxy_pass http://localhost:9997;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+
 EOF
 
 # Enable the Nginx site
