@@ -119,13 +119,14 @@ server {
 EOF
 
 # Enable the Nginx site
-sudo ln -sf /etc/nginx/sites-available/openfire /etc/nginx/sites-enabled/
+sudo ln -sf /etc/nginx/sites-available/openfire.conf /etc/nginx/sites-enabled/
 sudo systemctl reload nginx
 
 # Autosetup for OpenFire
 echo "Creating autosetup file for OpenFire"
 cat <<EOF | sudo tee/etc/openfire/openfire.xml
 <?xml version="1.0" encoding="UTF-8"?>
+<jive>
 <autosetup>
   <run>true</run>
   <locale>en</locale>
@@ -172,15 +173,10 @@ cat <<EOF | sudo tee/etc/openfire/openfire.xml
                 <password>PASSword01</password> <!-- Required -->
                 <name>Jane Doe</name>
                 <email>user1@example.org</email>
-                <roster>
-                    <item1> <!-- Use incremental numbers for more items, eg: item2, item3 -->
-                        <jid>john@example.com</jid>
-                        <nickname>John</nickname>
-                    </item1>
-                </roster>
             </user1>
         </users>
     </autosetup>
+</jive>    
 EOF
 
 ## Write Configuration to File
