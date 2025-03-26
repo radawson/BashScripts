@@ -30,34 +30,24 @@ sudo ufw allow 10000/udp
 sudo ufw allow 22/tcp
 sudo ufw allow 3478/udp
 sudo ufw allow 5349/tcp
-sudo ufw enable --force
+sudo ufw --force enable
 
 ## Repository Preparation
 # Ensure support for apt repositories served via HTTPS
 echo "Installing apt-transport-https"
-sudo apt install apt-transport-https
+sudo apt-get install -y apt-transport-https
 
 # Add Ubuntu universe repository
 echo "Adding Ubuntu universe repository"
-sudo apt-add-repository universe
+sudo apt-add-repository -y universe
 
 # Add OpenJDK repository
 echo "Adding OpenJDK repository"
-sudo apt-add-repository ppa:openjdk-r/ppa
-
-# Set JAVA_HOME
-echo "Setting JAVA_HOME"
-echo "export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> ~/.bashrc
-echo "export PATH=$PATH:$JAVA_HOME/bin" >> ~/.bashrc
-source ~/.bashrc
-
-# Add Maven repository
-echo "Adding Maven repository"
-sudo apt-add-repository ppa:andrei-pozolotin/maven3
+sudo apt-add-repository -y ppa:openjdk-r/ppa
 
 # Add PostgreSQL repository
 echo "Adding PostgreSQL repository"
-sudo apt install -y postgresql-common
+sudo apt-get install -y postgresql-common
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 
 # Add Jitsi repository
@@ -72,6 +62,12 @@ sudo apt-get update
 # Install OpenJDK
 echo "Installing OpenJDK"
 sudo apt-get -y install openjdk-22-jdk
+
+# Set JAVA_HOME
+echo "Setting JAVA_HOME"
+echo "export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >> ~/.bashrc
+echo "export PATH=$PATH:$JAVA_HOME/bin" >> ~/.bashrc
+source ~/.bashrc
 
 # Install Maven
 echo "Installing Maven"
