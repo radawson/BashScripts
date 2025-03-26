@@ -1,8 +1,13 @@
 #!/bin/bash
 
+if [[ $# -ne 2 ]]; then
+    echo "Usage: $0 <FQDN> <IP>"
+    exit 1
+fi
+
 FQDN=${1}
 IP=${2}
-# Generate a secure random password (16 chars, alphanumeric only)
+# Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 
 ## System Preparation
