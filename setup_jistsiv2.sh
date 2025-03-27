@@ -207,7 +207,7 @@ server {
 EOF
 
 # Only add SSL server block if certificates exist
-if [[ -f /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem && -f /etc/letsencrypt/live/${OF_FQDN}/privkey.pem ]]; then
+if sudo test -f /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem && sudo test -f /etc/letsencrypt/live/${OF_FQDN}/privkey.pem; then
     cat <<EOF | sudo tee -a /etc/nginx/sites-available/openfire.conf
 server {
     listen 443 ssl http2;
@@ -239,6 +239,12 @@ server {
     }
 }
 EOF
+
+OF_CERTS=$(sudo ls /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem /etc/letsencrypt/live/${OF_FQDN}/privkey.pem 2>/dev/null)
+else
+    echo "Warning: SSL certificates not found. HTTPS configuration for OpenFire not added."
+    echo "You can add it later by running certbot for ${OF_FQDN} and updating the Nginx configuration."
+OF_CERTS="SSL not installed"
 fi
 
 # Enable the Nginx site
@@ -290,6 +296,19 @@ EOF
 # Restart OpenFire to apply the configuration
 echo "Restarting OpenFire"
 sudo systemctl restart openfire
+sleep 10
+sudo systemctl stop openfire
+
+# Create new XML content with proper admin console settings
+sudo sed -i 's|</jive>|<adminConsole>\
+    <port>9997</port>\
+    <securePort>-1</securePort>\
+    <interface>127.0.0.1</interface>\
+</adminConsole>\
+</jive>|' /etc/openfire/openfire.xml
+
+# Start OpenFire with the updated configuration
+sudo systemctl start openfire
 
 ## Write Configuration to File
 # Save host data to file for reference
@@ -300,7 +319,6 @@ FQDN: ${FQDN}
 IP Address: ${IP}
 
 EOF
-
 echo "Saving Jitsi configuration"
 # TODO: Save Jitsi configuration to file
 cat <<EOF >>~/server_config.txt
@@ -309,7 +327,7 @@ Jitsi FQDN: ${FQDN}
 Jitsi IP Address: ${IP} 
 
 Jitsi Certs:
-
+$(sudo ls /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/letsencrypt/live/${FQDN}/privkey.pem 2>/dev/null)
 
 EOF
 # Save OpenFire configuration to file
@@ -320,8 +338,7 @@ OpenFire FQDN: ${FQDN}
 OpenFire IP Address: ${IP}
 
 OpenFire Certs:
-    /etc/ssl/certs/openfire.crt
-    /etc/ssl/private/openfire.key
+${OF_CERTS}
 OpenFire Database:
     Database Type: PostgreSQL
     Database Name: openfire
