@@ -73,6 +73,12 @@ echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jit
 sudo apt-get update
 
 ## Software Installation
+# Install CertBot
+echo "Installing CertBot (snap)"
+sudo apt-get remove -y certbot --purge
+sudo snap install --classic certbot
+sudo ln -s /snap/bin/certbot /usr/bin/certbot
+
 # Install OpenJDK
 echo "Installing OpenJDK"
 sudo apt-get -y install openjdk-24-jdk
