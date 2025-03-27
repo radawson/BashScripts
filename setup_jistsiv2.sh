@@ -37,8 +37,11 @@ OF_FQDN="openfire.${DOMAIN}"
 ## System Preparation
 # Update and upgrade the system
 echo "Updating and upgrading the system"
+wait_for_apt
 sudo apt update
+wait_for_apt
 sudo apt-get -y dist-upgrade
+wait_for_apt
 sudo apt-get -y autoremove
 
 # Set hostname in two locations
