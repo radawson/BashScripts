@@ -1,12 +1,23 @@
 #!/bin/bash
 
-if [[ $# -ne 2 ]]; then
-    echo "Usage: $0 <DNS DOMAIN> <IP>"
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+    echo "Usage: $0 <DNS DOMAIN> [IP]"
     exit 1
 fi
 
 DOMAIN=${1}
-IP=${2}
+if [[ $# -eq 2 ]]; then
+    IP=${2}
+else
+    IP=$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print $4}' | cut -d/ -f1)
+fi
+if [[ -z "${IP}" ]]; then
+    echo "Unable to determine IP address. Please provide it as the second argument."
+    exit 1
+fi
+
+echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
+
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FQDN="meet.${DOMAIN}"
