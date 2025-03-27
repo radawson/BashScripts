@@ -149,6 +149,14 @@ sudo ln -sf /etc/letsencrypt/live/${OF_FQDN}/privkey.pem /etc/ssl/private/openfi
 sudo chmod 644 /etc/ssl/certs/openfire.crt
 sudo chmod 600 /etc/ssl/private/openfire.key
 
+# After getting certificates with certbot, copy them to OpenFire's directory
+echo "Copying certificates to OpenFire"
+sudo mkdir -p /etc/openfire/security
+sudo cp /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem /etc/openfire/security/
+sudo cp /etc/letsencrypt/live/${OF_FQDN}/privkey.pem /etc/openfire/security/
+sudo chown -R openfire:openfire /etc/openfire/security
+sudo chmod 640 /etc/openfire/security/*.pem
+
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
 CERT_LINE=""
@@ -221,6 +229,12 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
       <port>9997</port>
       <securePort>9998</securePort>
       <interface>127.0.0.1</interface>
+      <certificates>
+        <keystore>/etc/openfire/security/keystore</keystore>
+        <keypass>changeit</keypass>
+        <truststore>/etc/openfire/security/truststore</truststore>
+        <trustpass>changeit</trustpass>
+      </certificates>
     </adminConsole>
     <xmpp>
         <domain>${OF_FQDN}</domain>
