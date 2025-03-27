@@ -184,7 +184,7 @@ sudo systemctl reload nginx
 # Autosetup for OpenFire
 echo "Creating autosetup file for OpenFire"
 OF_ADMIN_PWD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 12 | head -n 1)
-cat <<EOF | sudo tee/etc/openfire/openfire.xml
+cat <<EOF | sudo tee /etc/openfire/openfire.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <jive>
 <autosetup>
