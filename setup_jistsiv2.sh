@@ -38,12 +38,16 @@ echo "${IP} ${OF_FQDN}" | sudo tee -a /etc/hosts
 
 # Configure Firewall
 echo "Configuring firewall"
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw allow 10000/udp
-sudo ufw allow 22/tcp
-sudo ufw allow 3478/udp
-sudo ufw allow 5349/tcp
+sudo ufw allow 22/tcp    # SSH
+sudo ufw allow 80/tcp    # HTTP
+sudo ufw allow 443/tcp   # HTTPS
+sudo ufw allow 3478/udp  # Jitsi videobridge
+sudo ufw allow 5222/tcp  # XMPP client connections
+sudo ufw allow 5223/tcp  # XMPP client connections (SSL)
+sudo ufw allow 5269/tcp  # XMPP server-to-server connections
+sudo ufw allow 5349/tcp  # XMPP server-to-server connections (SSL)
+sudo ufw allow 7777/tcp  # File transfer
+sudo ufw allow 10000/udp # Jitsi media traffic
 sudo ufw --force enable
 
 ## Repository Preparation
@@ -195,55 +199,55 @@ OF_ADMIN_PWD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 12 | head -n 1)
 cat <<EOF | sudo tee /etc/openfire/openfire.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <jive>
-<autosetup>
-  <run>true</run>
-  <locale>en</locale>
+  <autosetup>
+    <run>true</run>
+    <locale>en</locale>
     <adminConsole>
       <!-- Disable either port by setting the value to -1 -->
       <port>9997</port>
       <securePort>9998</securePort>
       <interface>127.0.0.1</interface>
     </adminConsole>
-        <xmpp>
-            <domain>${OF_FQDN}</domain>
-            <fqdn>${OF_FQDN}</fqdn>
-            <auth>
-                <anonymous>true</anonymous>
-            </auth>
-            <socket>
-                <ssl>
-                    <active>true</active>
-                </ssl>
-            </socket>
-        </xmpp>
-        <database>
-            <mode>standard</mode>
-            <defaultProvider>
-                <driver>org.postgresql.Driver</driver>
-                <serverURL>jdbc:postgresql://localhost:5432/openfire</serverURL>
-                <username>openfire</username>
-                <password>${DB_PASSWORD}</password>
-                <minConnections>5</minConnections>
-                <maxConnections>25</maxConnections>
-                <connectionTimeout>1.0</connectionTimeout>
-            </defaultProvider>
-        </database>
-        <admin>
-            <email>admin@techopsgroup.com</email>
-        <password>${OF_ADMIN_PWD}</password>
-        </admin>
-        <authprovider>
-            <mode>default</mode>
-        </authprovider>
-        <users>
-            <user1> <!-- Use incremental numbers for more users, eg: user2, user3 -->
-                <username>admin</username> <!-- Required -->
-                <password>${OF_ADMIN_PWD}</password> <!-- Required -->
-                <name>admin user</name>
-                <email>admin@${domain}</email>
-            </user1>
-        </users>
-    </autosetup>
+    <xmpp>
+        <domain>${OF_FQDN}</domain>
+        <fqdn>${FQDN}</fqdn>
+        <auth>
+            <anonymous>true</anonymous>
+        </auth>
+        <socket>
+            <ssl>
+                <active>true</active>
+            </ssl>
+        </socket>
+    </xmpp>
+    <database>
+        <mode>standard</mode>
+        <defaultProvider>
+            <driver>org.postgresql.Driver</driver>
+            <serverURL>jdbc:postgresql://localhost:5432/openfire</serverURL>
+            <username>openfire</username>
+            <password>${DB_PASSWORD}</password>
+            <minConnections>5</minConnections>
+            <maxConnections>25</maxConnections>
+            <connectionTimeout>1.0</connectionTimeout>
+        </defaultProvider>
+    </database>
+    <admin>
+      <email>admin@${DOMAIN}</email>
+      <password>${OF_ADMIN_PWD}</password>
+    </admin>
+    <authprovider>
+        <mode>default</mode>
+    </authprovider>
+    <users>
+        <user1> <!-- Use incremental numbers for more users, eg: user2, user3 -->
+            <username>ghostrider</username> <!-- Required -->
+            <password>${OF_ADMIN_PWD}</password> <!-- Required -->
+            <name>default user</name>
+            <email>ghostrider@${DOMAIN}</email>
+        </user1>
+    </users>
+  </autosetup>
 </jive>    
 EOF
 
