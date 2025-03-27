@@ -61,6 +61,7 @@ sudo ufw allow 5223/tcp  # XMPP client connections (SSL)
 sudo ufw allow 5269/tcp  # XMPP server-to-server connections
 sudo ufw allow 5349/tcp  # XMPP server-to-server connections (SSL)
 sudo ufw allow 7777/tcp  # File transfer
+sudo ufw allot 9997/tcp  # OpenFire admin console direct
 sudo ufw allow 10000/udp # Jitsi media traffic
 sudo ufw --force enable
 
@@ -185,13 +186,6 @@ sudo chown -R openfire:openfire /etc/openfire/security
 
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
-CERT_LINE=""
-if [[ -f /etc/ssl/certs/openfire.crt && -f /etc/ssl/private/openfire.key ]]; then
-    CERT_LINE="    ssl_certificate /etc/ssl/certs/openfire.crt;\n    ssl_certificate_key /etc/ssl/private/openfire.key;"
-else
-    echo "Warning: SSL certificate files not found. Nginx will not use SSL."
-fi
-
 cat <<EOF | sudo tee /etc/nginx/sites-available/openfire.conf
 server {
     listen 80;
@@ -203,39 +197,14 @@ server {
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_http_version 1.1;
+        
+        # Add WebSocket support
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
     }
 }
 EOF
-
-# Only add SSL server block if certificates exist
-if [[ -f /etc/ssl/certs/openfire.crt && -f /etc/ssl/private/openfire.key ]]; then
-    cat <<EOF | sudo tee -a /etc/nginx/sites-available/openfire.conf
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name ${OF_FQDN};
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:10m;  # about 40000 sessions
-    ssl_session_tickets off;
-
-    ssl_certificate /etc/ssl/certs/openfire.crt;
-    ssl_certificate_key /etc/ssl/private/openfire.key;
-
-    location / {
-        proxy_pass http://localhost:9997;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-    }
-}
-EOF
-fi
 
 # Enable the Nginx site
 sudo ln -sf /etc/nginx/sites-available/openfire.conf /etc/nginx/sites-enabled/
@@ -253,26 +222,15 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
     <adminConsole>
       <!-- Disable either port by setting the value to -1 -->
       <port>9997</port>
-      <securePort>9998</securePort>
+      <securePort>-1</securePort>
       <interface>0.0.0.0</interface>
-      <certificates>
-        <keystore>/etc/openfire/security/keystore</keystore>
-        <keypass>changeit</keypass>
-        <truststore>/etc/openfire/security/truststore</truststore>
-        <trustpass>changeit</trustpass>
-      </certificates>
     </adminConsole>
     <xmpp>
-        <domain>${OF_FQDN}</domain>
+        <domain>${FQDN}</domain>
         <fqdn>${FQDN}</fqdn>
         <auth>
             <anonymous>true</anonymous>
         </auth>
-        <socket>
-            <ssl>
-                <active>true</active>
-            </ssl>
-        </socket>
     </xmpp>
     <database>
         <mode>standard</mode>
@@ -290,17 +248,6 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
       <email>admin@${DOMAIN}</email>
       <password>${OF_ADMIN_PWD}</password>
     </admin>
-    <authprovider>
-        <mode>default</mode>
-    </authprovider>
-    <users>
-        <user1> <!-- Use incremental numbers for more users, eg: user2, user3 -->
-            <username>ghostrider</username> <!-- Required -->
-            <password>${OF_ADMIN_PWD}</password> <!-- Required -->
-            <name>default user</name>
-            <email>ghostrider@${DOMAIN}</email>
-        </user1>
-    </users>
   </autosetup>
 </jive>    
 EOF
@@ -334,7 +281,7 @@ EOF
 echo "Saving Openfire configuration"
 cat <<EOF >>~/server_config.txt
 -- OpenFire Configuration --
-OpenFire FQDN: ${OF_FQDN}
+OpenFire FQDN: ${FQDN}
 OpenFire IP Address: ${IP}
 
 OpenFire Certs:
