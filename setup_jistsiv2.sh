@@ -157,6 +157,32 @@ sudo cp /etc/letsencrypt/live/${OF_FQDN}/privkey.pem /etc/openfire/security/
 sudo chown -R openfire:openfire /etc/openfire/security
 sudo chmod 640 /etc/openfire/security/*.pem
 
+# Create a PKCS12 file from the certificates
+sudo openssl pkcs12 -export -out /etc/openfire/security/openfire.pkcs12 \
+  -inkey /etc/openfire/security/privkey.pem \
+  -in /etc/openfire/security/fullchain.pem \
+  -name "${OF_FQDN}" \
+  -password pass:changeit
+
+# Convert PKCS12 to Java keystore
+sudo keytool -importkeystore \
+  -srckeystore /etc/openfire/security/openfire.pkcs12 \
+  -srcstoretype PKCS12 \
+  -srcstorepass changeit \
+  -destkeystore /etc/openfire/security/keystore \
+  -deststorepass changeit \
+  -alias "${OF_FQDN}"
+
+# Create truststore with the same certificate
+sudo keytool -import -trustcacerts -noprompt \
+  -file /etc/openfire/security/fullchain.pem \
+  -alias "${OF_FQDN}" \
+  -keystore /etc/openfire/security/truststore \
+  -storepass changeit
+
+# Set proper ownership
+sudo chown -R openfire:openfire /etc/openfire/security
+
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
 CERT_LINE=""
@@ -228,7 +254,7 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
       <!-- Disable either port by setting the value to -1 -->
       <port>9997</port>
       <securePort>9998</securePort>
-      <interface>127.0.0.1</interface>
+      <interface>0.0.0.0</interface>
       <certificates>
         <keystore>/etc/openfire/security/keystore</keystore>
         <keypass>changeit</keypass>
