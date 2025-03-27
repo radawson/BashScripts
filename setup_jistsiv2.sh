@@ -5,6 +5,17 @@ if [[ $# -lt 1 || $# -gt 2 ]]; then
     exit 1
 fi
 
+# Function to wait for apt locks to be released
+wait_for_apt() {
+  echo "Checking for apt/dpkg locks:"
+  while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+    printf "Waiting for other apt/dpkg processes to complete..."
+    sleep 5
+    printf "."
+  done
+  echo -e "\n\nLocks released, proceeding with installation."
+}
+
 DOMAIN=${1}
 if [[ $# -eq 2 ]]; then
     IP=${2}
@@ -250,6 +261,10 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
   </autosetup>
 </jive>    
 EOF
+
+# Restart OpenFire to apply the configuration
+echo "Restarting OpenFire"
+sudo systemctl restart openfire
 
 ## Write Configuration to File
 # Save host data to file for reference
