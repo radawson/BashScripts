@@ -238,9 +238,9 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
         <users>
             <user1> <!-- Use incremental numbers for more users, eg: user2, user3 -->
                 <username>admin</username> <!-- Required -->
-                <password>PASSword01</password> <!-- Required -->
-                <name>Jane Doe</name>
-                <email>user1@example.org</email>
+                <password>${OF_ADMIN_PWD}</password> <!-- Required -->
+                <name>admin user</name>
+                <email>admin@${domain}</email>
             </user1>
         </users>
     </autosetup>
