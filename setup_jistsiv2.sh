@@ -128,7 +128,6 @@ sudo ln -sf /etc/letsencrypt/live/${OF_FQDN}/privkey.pem /etc/ssl/private/openfi
 sudo chmod 644 /etc/ssl/certs/openfire.crt
 sudo chmod 600 /etc/ssl/private/openfire.key
 
-
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
 CERT_LINE=""
@@ -184,6 +183,7 @@ sudo systemctl reload nginx
 
 # Autosetup for OpenFire
 echo "Creating autosetup file for OpenFire"
+OF_ADMIN_PWD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 12 | head -n 1)
 cat <<EOF | sudo tee/etc/openfire/openfire.xml
 <?xml version="1.0" encoding="UTF-8"?>
 <jive>
@@ -193,7 +193,7 @@ cat <<EOF | sudo tee/etc/openfire/openfire.xml
     <adminConsole>
       <!-- Disable either port by setting the value to -1 -->
       <port>9997</port>
-      <securePort>-1</securePort>
+      <securePort>9998</securePort>
       <interface>127.0.0.1</interface>
     </adminConsole>
         <xmpp>
@@ -222,7 +222,7 @@ cat <<EOF | sudo tee/etc/openfire/openfire.xml
         </database>
         <admin>
             <email>admin@techopsgroup.com</email>
-        <password>PASSword01</password>
+        <password>${OF_ADMIN_PWD}</password>
         </admin>
         <authprovider>
             <mode>default</mode>
@@ -253,16 +253,31 @@ echo "Saving Jitsi configuration"
 # TODO: Save Jitsi configuration to file
 cat <<EOF >>~/server_config.txt
 -- Jitsi Configuration --
+Jitsi FQDN: ${FQDN}
+Jitsi IP Address: ${IP} 
+
+Jitsi Certs:
+
 
 EOF
-
-# Save database credentials to a file for reference
-echo "Saving database credentials"
+# Save OpenFire configuration to file
+echo "Saving Openfire configuration"
 cat <<EOF >>~/server_config.txt
--- Database Configuration --
-Database User: openfire
-Database Name: openfire
-Database Password: ${DB_PASSWORD}
+-- OpenFire Configuration --
+OpenFire FQDN: ${OF_FQDN}
+OpenFire IP Address: ${IP}
+
+OpenFire Certs:
+    /etc/ssl/certs/openfire.crt
+    /etc/ssl/private/openfire.key
+OpenFire Database:
+    Database Type: PostgreSQL
+    Database Name: openfire
+    Database User: openfire
+    Database Password: ${DB_PASSWORD}
+OpenFire Admin:
+    Username: admin
+    Password: ${OF_ADMIN_PWD}
 EOF
 chmod 600 ~/server_config.txt
 echo "Database credentials saved to ~/server_config.txt"
