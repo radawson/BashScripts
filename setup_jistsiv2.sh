@@ -61,7 +61,7 @@ sudo ufw allow 5223/tcp  # XMPP client connections (SSL)
 sudo ufw allow 5269/tcp  # XMPP server-to-server connections
 sudo ufw allow 5349/tcp  # XMPP server-to-server connections (SSL)
 sudo ufw allow 7777/tcp  # File transfer
-sudo ufw allot 9997/tcp  # OpenFire admin console direct
+sudo ufw allow 9997/tcp  # OpenFire admin console direct
 sudo ufw allow 10000/udp # Jitsi media traffic
 sudo ufw --force enable
 
@@ -205,6 +205,36 @@ server {
     }
 }
 EOF
+
+# Only add SSL server block if certificates exist
+if [[ -f /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem && -f /etc/letsencrypt/live/${OF_FQDN}/privkey.pem ]]; then
+    cat <<EOF | sudo tee -a /etc/nginx/sites-available/openfire.conf
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name ${OF_FQDN};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_prefer_server_ciphers off;
+
+    ssl_session_timeout 1d;
+    ssl_session_cache shared:SSL:10m; 
+    ssl_session_tickets off;
+
+    ssl_certificate /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${OF_FQDN}/privkey.pem;
+
+    location / {
+        proxy_pass http://localhost:9997;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+    }
+}
+EOF
+fi
 
 # Enable the Nginx site
 sudo ln -sf /etc/nginx/sites-available/openfire.conf /etc/nginx/sites-enabled/
