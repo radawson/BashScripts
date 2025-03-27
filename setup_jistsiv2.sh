@@ -112,9 +112,26 @@ sudo -u postgres psql -c "CREATE DATABASE openfire;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE openfire TO openfire;"
 sudo -u postgres psql -c "ALTER USER openfire WITH SUPERUSER;"
 
+# Get certificate for the openfire domain using certbot
+echo "Obtaining SSL certificate for ${OF_FQDN}"
+sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@${DOMAIN} -d ${OF_FQDN} --preferred-challenges http-01
+# Create a symlink to the certificate for Nginx
+sudo ln -sf /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem /etc/ssl/certs/openfire.crt
+sudo ln -sf /etc/letsencrypt/live/${OF_FQDN}/privkey.pem /etc/ssl/private/openfire.key
+# Set permissions on the certificate files
+sudo chmod 644 /etc/ssl/certs/openfire.crt
+sudo chmod 600 /etc/ssl/private/openfire.key
+
+
 # Configure Nginx for Openfire
 echo "Configuring Nginx for Openfire"
-CERT_LINE=$(cat /etc/nginx/sites-available/meet.techopsgroup.com.conf | grep ssl_certificate)
+CERT_LINE=""
+if [[ -f /etc/ssl/certs/openfire.crt && -f /etc/ssl/private/openfire.key ]]; then
+    CERT_LINE="    ssl_certificate /etc/ssl/certs/openfire.crt;\n    ssl_certificate_key /etc/ssl/private/openfire.key;"
+else
+    echo "Warning: SSL certificate files not found. Nginx will not use SSL."
+fi
+
 cat <<EOF | sudo tee /etc/nginx/sites-available/openfire.conf
 server {
     listen 80;
@@ -131,7 +148,7 @@ server {
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name meet.techopsgroup.com;
+    server_name ${OF_FQDN};
 
     # Mozilla Guideline v5.4, nginx 1.17.7, OpenSSL 1.1.1d, intermediate configuration
     ssl_protocols TLSv1.2 TLSv1.3;
