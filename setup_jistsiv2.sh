@@ -31,6 +31,8 @@ echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+FOCUS_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+JVB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FQDN="meet.${DOMAIN}"
 OF_FQDN="openfire.${DOMAIN}"
 
@@ -123,6 +125,9 @@ sudo apt-get -y install jitsi-meet
 # Shut down prosody to prevent conflicts with OpenFire
 sudo systemctl stop prosody
 sudo systemctl disable prosody
+
+# Get Jitsi certs
+JITSI_CERTS=$(sudo ls /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/letsencrypt/live/${FQDN}/privkey.pem 2>/dev/null)
 
 #Shut down nginx to prevent conflicts with OpenFire
 sudo systemctl stop nginx
@@ -310,6 +315,105 @@ sudo sed -i 's|</jive>|<adminConsole>\
 # Start OpenFire with the updated configuration
 sudo systemctl start openfire
 
+
+
+
+# Configure Jitsi Meet to use OpenFire instead of Prosody
+echo "Configuring Jitsi Meet to use OpenFire"
+sudo sed -i "s/muc:.*/muc: '${FQDN}',/" /etc/jitsi/meet/${FQDN}-config.js
+sudo sed -i "s/// bosh:.*/bosh: '//${FQDN}/http-bind',/" /etc/jitsi/meet/${FQDN}-config.js
+
+# Configure Jicofo to use OpenFire
+echo "Configuring Jicofo for OpenFire"
+sudo tee /etc/jitsi/jicofo/config > /dev/null << EOF
+jicofo {
+  authentication {
+    enabled = true
+    type = XMPP
+    login-url = "xmpp://${FQDN}:5222"
+    enable-auto-login = true
+  }
+  
+  xmpp {
+    client {
+      enabled = true
+      hostname = "${FQDN}"
+      port = 5222
+      domain = "${FQDN}"
+      username = "focus"
+      password = "${FOCUS_PASSWORD}"
+      conference-muc-jid = "conference.${FQDN}"
+    }
+  }
+}
+EOF
+
+# Configure JVB to use OpenFire
+echo "Configuring JVB for OpenFire"
+sudo tee /etc/jitsi/videobridge/config > /dev/null << EOF
+videobridge {
+  apis {
+    xmpp-client {
+      configs {
+        shard {
+          HOSTNAME = "${FQDN}"
+          PORT = "5222"
+          DOMAIN = "${FQDN}"
+          USERNAME = "jvb"
+          PASSWORD = "${JVB_PASSWORD}"
+          MUC_JIDS = "jvbbrewery@internal.${FQDN}"
+          MUC_NICKNAME = "jvb-\${ID}"
+          DISABLE_CERTIFICATE_VERIFICATION = true
+        }
+      }
+    }
+  }
+}
+EOF
+
+# Wait for OpenFire to be ready
+echo "Waiting for OpenFire to start..."
+sleep 20  # Basic wait, could be improved with a proper check
+
+# Create required users and components in OpenFire
+# This can be done with OpenFire's REST API if enabled, or by pre-creating them in the database
+
+# First, install the OpenFire REST API plugin
+echo "Installing OpenFire REST API plugin"
+sudo wget -O /tmp/restAPI.jar https://www.igniterealtime.org/projects/openfire/plugins/restAPI.jar
+sudo mv /tmp/restAPI.jar /usr/share/openfire/plugins/
+
+# Wait for plugin to be activated
+sleep 10
+
+# Create the focus user and JVB user
+echo "Creating required users via REST API"
+curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"focus\",\"password\":\"${FOCUS_PASSWORD}\",\"name\":\"Focus User\",\"email\":\"focus@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
+curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"jvb\",\"password\":\"${JVB_PASSWORD}\",\"name\":\"JVB User\",\"email\":\"jvb@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
+
+# Create MUC room
+curl -X POST -H "Content-Type: application/json" -d "{\"roomName\":\"jvbbrewery\",\"naturalName\":\"JVB Brewery\",\"description\":\"JVB Conference Room\",\"persistent\":true}" http://localhost:9997/plugins/restapi/v1/chatrooms
+
+# Configure OpenFire for Jitsi
+echo "Configuring OpenFire for Jitsi compatibility"
+
+# Download and install required plugins
+sudo wget -O /tmp/monitoring.jar https://www.igniterealtime.org/projects/openfire/plugins/monitoring.jar
+sudo mv /tmp/monitoring.jar /usr/share/openfire/plugins/
+
+# Enable anonymous login (required for Jitsi guests)
+curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.anonymous.login.enabled
+
+# Enable MUC service
+curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.enabled
+
+# Restart all Jitsi components
+echo "Restarting Jitsi services"
+sudo systemctl restart jicofo
+sudo systemctl restart jitsi-videobridge2
+sudo systemctl restart nginx
+sudo systemctl restart openfire
+
 ## Write Configuration to File
 # Save host data to file for reference
 echo "Saving host data"
@@ -326,8 +430,11 @@ cat <<EOF >>~/server_config.txt
 Jitsi FQDN: ${FQDN}
 Jitsi IP Address: ${IP} 
 
+focus:${FOCUS_PASSWORD}
+jvb:${JVB_PASSWORD}
+
 Jitsi Certs:
-$(sudo ls /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/letsencrypt/live/${FQDN}/privkey.pem 2>/dev/null)
+${JITSI_CERTS}
 
 EOF
 # Save OpenFire configuration to file
