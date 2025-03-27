@@ -105,6 +105,9 @@ sudo apt-get -y install jitsi-meet
 sudo systemctl stop prosody
 sudo systemctl disable prosody
 
+#Shut down nginx to prevent conflicts with OpenFire
+sudo systemctl stop nginx
+
 # Install OpenFire
 echo "Installing OpenFire"
 wget https://www.igniterealtime.org/downloadServlet?filename=openfire/openfire_4.9.2_all.deb -O openfire.deb
@@ -150,12 +153,16 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
+EOF
+
+# Only add SSL server block if certificates exist
+if [[ -f /etc/ssl/certs/openfire.crt && -f /etc/ssl/private/openfire.key ]]; then
+    cat <<EOF | sudo tee -a /etc/nginx/sites-available/openfire.conf
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
     server_name ${OF_FQDN};
 
-    # Mozilla Guideline v5.4, nginx 1.17.7, OpenSSL 1.1.1d, intermediate configuration
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_prefer_server_ciphers off;
@@ -164,7 +171,8 @@ server {
     ssl_session_cache shared:SSL:10m;  # about 40000 sessions
     ssl_session_tickets off;
 
-    ${CERT_LINE}
+    ssl_certificate /etc/ssl/certs/openfire.crt;
+    ssl_certificate_key /etc/ssl/private/openfire.key;
 
     location / {
         proxy_pass http://localhost:9997;
@@ -174,12 +182,12 @@ server {
         proxy_set_header X-Forwarded-Proto \$scheme;
     }
 }
-
 EOF
+fi
 
 # Enable the Nginx site
 sudo ln -sf /etc/nginx/sites-available/openfire.conf /etc/nginx/sites-enabled/
-sudo systemctl reload nginx
+sudo systemctl start nginx
 
 # Autosetup for OpenFire
 echo "Creating autosetup file for OpenFire"
