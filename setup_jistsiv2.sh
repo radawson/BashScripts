@@ -31,6 +31,7 @@ wait_for_openfire() {
   done
   echo "OpenFire admin interface is responding"
   return 0
+}
 
 DOMAIN=${1}
 if [[ $# -eq 2 ]]; then
