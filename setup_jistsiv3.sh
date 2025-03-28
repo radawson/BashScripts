@@ -1,5 +1,5 @@
 #!/bin/bash
-v3.0.1
+#v3.0.2
 # This script sets up a Jitsi Meet server with OpenFire as the XMPP backend.
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -53,6 +53,7 @@ DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FOCUS_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 JVB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FQDN="meet.${DOMAIN}"
+OF_FQDN="openfire.${DOMAIN}"
 
 ## System Preparation
 # Update and upgrade the system
@@ -226,8 +227,12 @@ sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@$
   -d ${FQDN} --preferred-challenges http-01
 
 # After certificate generation
-OF_CERTS=$(sudo ls /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/letsencrypt/live/${FQDN}/privkey.pem 2>/dev/null)
-
+if [ ! -f /etc/letsencrypt/live/${FQDN}/fullchain.pem ]; then
+    echo "Certificate generation failed!"
+    OF_CERTS="Certificate Generation Failed"
+else
+    OF_CERTS=$(sudo ls /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/letsencrypt/live/${FQDN}/privkey.pem 2>/dev/null)
+fi
 # After getting certificates with certbot, copy them to OpenFire's directory
 echo "Copying certificates to OpenFire"
 sudo mkdir -p /etc/openfire/security
@@ -266,7 +271,7 @@ sudo keytool -import -trustcacerts -noprompt \
 # Set proper ownership
 sudo chown -R openfire:openfire /etc/openfire/security
 
-# Move keystores to default diredctory
+# Move keystores to default directory
 sudo cp /etc/openfire/security/keystore /usr/share/openfire/resources/security/
 sudo cp /etc/openfire/security/truststore /usr/share/openfire/resources/security/
 
@@ -280,6 +285,13 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
   <autosetup>
     <run>true</run>
     <locale>en</locale>
+
+    <adminConsole>
+      <enabled>true</enabled>
+      <port>9090</port>
+      <securePort>9091</securePort>
+      <secure>false</secure>
+    </adminConsole>
 
     <cross-domain>
       <enabled>true</enabled>
@@ -314,7 +326,12 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
 
   </autosetup>
 
-    <plugin>
+  <property>
+    <name>adminConsole.access.allow-wildcards-in-excludes</name>
+    <value>true</value>
+  </property>
+
+  <plugin>
     <restAPI>
       <enabled>true</enabled>
       <httpAuth>
@@ -353,11 +370,6 @@ echo "Installing and enabling OpenFire REST API plugin"
 sudo wget -O /tmp/restAPI.jar https://www.igniterealtime.org/projects/openfire/plugins/restAPI.jar
 sudo cp /tmp/restAPI.jar /usr/share/openfire/plugins/
 
-# WebSocket plugin
-echo "Installing OpenFire WebSocket plugin"
-sudo wget -O /tmp/websocket.jar https://www.igniterealtime.org/projects/openfire/plugins/websocket.jar
-sudo mv /tmp/websocket.jar /usr/share/openfire/plugins/
-
 # HTTP File Upload
 echo "Installing OpenFire HTTP File Upload plugin"
 sudo wget -O /tmp/httpfileupload.jar https://www.igniterealtime.org/projects/openfire/plugins/httpFileUpload.jar
@@ -375,7 +387,7 @@ sudo mv /tmp/userImportExport.jar /usr/share/openfire/plugins/
 
 # S2S (Server-to-Server)
 echo "Installing OpenFire S2S plugin"
-sudo wget -O /tmp/s2s.jar https://www.igniterealtime.org/projects/openfire/plugins/s2s.jar
+sudo wget -O /tmp/s2s.jar https://www.igniterealtime.org/projects/openfire/plugins/1.0.1/s2sconformancetest.jar
 sudo mv /tmp/s2s.jar /usr/share/openfire/plugins/
 
 # Restart nginx to apply the new configuration
@@ -395,23 +407,10 @@ FQDN: ${FQDN}
 IP Address: ${IP}
 
 EOF
-echo "Saving Jitsi configuration"
-# TODO: Save Jitsi configuration to file
-cat <<EOF >>~/server_config.txt
--- Jitsi Configuration --
-Jitsi FQDN: ${FQDN}
-Jitsi IP Address: ${IP} 
 
-focus:${FOCUS_PASSWORD}
-jvb:${JVB_PASSWORD}
-
-Jitsi Certs:
-${JITSI_CERTS}
-
-EOF
 # Save OpenFire configuration to file
 echo "Saving Openfire configuration"
-cat <<EOF >>~/server_config.txt
+cat <<EOF > ~/server_config.txt
 -- OpenFire Configuration --
 OpenFire FQDN: ${FQDN}
 OpenFire IP Address: ${IP}
