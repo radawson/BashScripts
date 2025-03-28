@@ -82,7 +82,8 @@ sudo ufw allow 5223/tcp  # XMPP client connections (SSL)
 sudo ufw allow 5269/tcp  # XMPP server-to-server connections
 sudo ufw allow 5349/tcp  # XMPP server-to-server connections (SSL)
 sudo ufw allow 7777/tcp  # File transfer
-sudo ufw allow 9997/tcp  # OpenFire admin console direct
+sudo ufw allow 9090/tcp  # OpenFire admin console direct
+sudo ufw allow 9091/tcp  # OpenFire admin console secure
 sudo ufw allow 10000/udp # Jitsi media traffic
 sudo ufw --force enable
 
@@ -114,6 +115,10 @@ sudo apt-get remove -y certbot --purge
 sudo snap install --classic certbot
 sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
+# Install Nginxq
+echo "Installing Nginx"
+sudo apt-get install nginx
+
 # Install OpenJDK
 echo "Installing OpenJDK"
 sudo apt-get -y install openjdk-24-jdk
@@ -123,10 +128,6 @@ echo "Setting JAVA_HOME"
 echo "export JAVA_HOME=$(dirname $(dirname $(readlink -f $(which java))))" >>~/.bashrc
 echo "export PATH=$PATH:$JAVA_HOME/bin" >>~/.bashrc
 source ~/.bashrc
-
-# Install Maven
-echo "Installing Maven"
-sudo apt-get -y install maven
 
 # Install PostgreSQL
 echo "Installing PostgreSQL"
@@ -202,7 +203,7 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
   <autosetup>
     <run>true</run>
     <locale>en</locale>
-    
+
     <adminConsole>
       <port>9090</port>
       <securePort>9091</securePort>
