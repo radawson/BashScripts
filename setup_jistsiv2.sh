@@ -316,8 +316,6 @@ sudo sed -i 's|</jive>|<adminConsole>\
 sudo systemctl start openfire
 
 
-
-
 # Configure Jitsi Meet to use OpenFire instead of Prosody
 echo "Configuring Jitsi Meet to use OpenFire"
 sudo sed -i "s/muc:.*/muc: '${FQDN}',/" /etc/jitsi/meet/${FQDN}-config.js
@@ -375,15 +373,42 @@ EOF
 echo "Waiting for OpenFire to start..."
 sleep 20  # Basic wait, could be improved with a proper check
 
-# Create required users and components in OpenFire
-# This can be done with OpenFire's REST API if enabled, or by pre-creating them in the database
-
-# First, install the OpenFire REST API plugin
+# Install OpenFire REST API plugin
 echo "Installing OpenFire REST API plugin"
 sudo wget -O /tmp/restAPI.jar https://www.igniterealtime.org/projects/openfire/plugins/restAPI.jar
 sudo mv /tmp/restAPI.jar /usr/share/openfire/plugins/
 
-# Wait for plugin to be activated
+# WebSocket plugin
+echo "Installing OpenFire WebSocket plugin"
+sudo wget -O /tmp/websocket.jar https://www.igniterealtime.org/projects/openfire/plugins/websocket.jar
+sudo mv /tmp/websocket.jar /usr/share/openfire/plugins/
+
+# HTTP File Upload
+echo "Installing OpenFire HTTP File Upload plugin"
+sudo wget -O /tmp/httpfileupload.jar https://www.igniterealtime.org/projects/openfire/plugins/httpFileUpload.jar
+sudo mv /tmp/httpfileupload.jar /usr/share/openfire/plugins/
+
+# Jingle Nodes
+echo "Installing OpenFire Jingle Nodes plugin"
+sudo wget -O /tmp/jinglenodes.jar https://www.igniterealtime.org/projects/openfire/plugins/jinglenodes.jar
+sudo mv /tmp/jinglenodes.jar /usr/share/openfire/plugins/
+
+# User Import/Export
+echo "Installing OpenFire User Import/Export plugin"
+sudo wget -O /tmp/userImportExport.jar https://www.igniterealtime.org/projects/openfire/plugins/userImportExport.jar
+sudo mv /tmp/userImportExport.jar /usr/share/openfire/plugins/
+
+# Connection Manager
+echo "Installing OpenFire Connection Manager plugin"
+sudo wget -O /tmp/connectionmanager.jar https://www.igniterealtime.org/projects/openfire/plugins/connection_manager.jar
+sudo mv /tmp/connectionmanager.jar /usr/share/openfire/plugins/
+
+# Load Testing
+echo "Installing OpenFire Load Testing plugin"
+sudo wget -O /tmp/loadStats.jar https://www.igniterealtime.org/projects/openfire/plugins/loadStats.jar
+sudo mv /tmp/loadStats.jar /usr/share/openfire/plugins/
+
+# Wait for plugins to be activated
 sleep 10
 
 # Create the focus user and JVB user
