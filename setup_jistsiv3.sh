@@ -115,9 +115,78 @@ sudo apt-get remove -y certbot --purge
 sudo snap install --classic certbot
 sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
-# Install Nginxq
+# Install Nginx
 echo "Installing Nginx"
 sudo apt-get install nginx
+
+cat <<EOF | sudo tee /etc/nginx/sites-available/${DOMAIN}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name meet.notaspy.org;
+
+    # Redirect HTTP to HTTPS
+    location / {
+        return 301 https://$host$request_uri;
+    }
+
+    # For Let's Encrypt verification
+    location ^~ /.well-known/acme-challenge/ {
+        default_type "text/plain";
+        root /var/www/html;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name meet.notaspy.org;
+
+    # SSL configuration
+    ssl_certificate /etc/letsencrypt/live/meet.notaspy.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/meet.notaspy.org/privkey.pem;
+
+    # SSL settings
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 1d;
+
+    # Proxy all other requests to OpenFire Meetings
+    location / {
+        proxy_pass https://${IP}:7443/;
+
+        # Important headers
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+
+        # WebSocket support
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        # SSL verification (disable for self-signed certs)
+        proxy_ssl_verify off;
+
+        # Timeout settings
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+
+        # Buffer settings
+        proxy_buffering off;
+        proxy_buffer_size 16k;
+        proxy_busy_buffers_size 24k;
+    }
+
+}
+EOF
+# Enable the Nginx configuration
+sudo ln -s /etc/nginx/sites-available/${DOMAIN} /etc/nginx/sites-enabled/
+
 
 # Install OpenJDK
 echo "Installing OpenJDK"
@@ -204,22 +273,10 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
     <run>true</run>
     <locale>en</locale>
 
-    <adminConsole>
-      <port>9090</port>
-      <securePort>9091</securePort>
-      <interface>${IP}</interface>
-    </adminConsole>
-    
     <cross-domain>
       <enabled>true</enabled>
       <allow-all-domains>true</allow-all-domains>
     </cross-domain>
-
-    <keystore>/etc/openfire/security/keystore</keystore>
-    <keystorePassword>${PKCS_PASSWORD}</keystorePassword>
-    <keyPassword></keyPassword>
-    <truststore>/etc/openfire/security/truststore</truststore>
-    <truststorePassword>${PKCS_PASSWORD}</truststorePassword>
     
     <xmpp>
         <domain>${FQDN}</domain>
@@ -256,6 +313,8 @@ echo "Restarting OpenFire"
 sudo systemctl restart openfire
 
 wait_for_openfire
+
+
 
 # Install OpenFire REST API plugin
 echo "Installing OpenFire REST API plugin"
