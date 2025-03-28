@@ -116,7 +116,7 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
 # Install Nginx
 echo "Installing Nginx"
-sudo apt-get install nginx
+sudo apt-get -y install nginx
 sudo systemctl stop nginx
 
 cat <<EOF | sudo tee /etc/nginx/sites-available/${DOMAIN}
@@ -152,6 +152,11 @@ server {
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
     ssl_session_cache shared:SSL:10m;
     ssl_session_timeout 1d;
+
+    # Only redirect the exact root path
+    location = / {
+        return 302 /ofmeet;
+    }
 
     # Proxy all other requests to OpenFire Meetings
     location / {
@@ -285,7 +290,7 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
         <domain>${FQDN}</domain>
         <fqdn>${FQDN}</fqdn>
         <auth>
-            <anonymous>true</anonymous>
+            <anonymous>false</anonymous>
         </auth>
     </xmpp>
     
@@ -308,6 +313,15 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
     </admin>
 
   </autosetup>
+
+    <plugin>
+    <restAPI>
+      <enabled>true</enabled>
+      <httpAuth>
+        <enabled>true</enabled>
+      </httpAuth>
+    </restAPI>
+  </plugin>
 </jive>    
 EOF
 
@@ -317,6 +331,8 @@ sudo systemctl restart openfire
 
 wait_for_openfire
 
+
+
 # Install booksmarks plugin
 echo "Installing OpenFire Bookmarks plugin"
 sudo wget -O /tmp/bookmarks.jar https://www.igniterealtime.org/projects/openfire/plugins/bookmarks.jar
@@ -324,7 +340,7 @@ sudo mv /tmp/bookmarks.jar /usr/share/openfire/plugins/
 
 # Install Certificate Manager plugin
 echo "Installing OpenFire Certificate Manager plugin"
-sudo wget -O /tmp/certmanager.jar https://www.igniterealtime.org/projects/openfire/plugins/certmanager.jar
+sudo wget -O /tmp/certmanager.jar https://www.igniterealtime.org/projects/openfire/plugins/certificatemanager.jar
 sudo mv /tmp/certmanager.jar /usr/share/openfire/plugins/
 
 # Install Monitoring Service plugin
@@ -335,8 +351,6 @@ sudo mv /tmp/monitoring.jar /usr/share/openfire/plugins/
 # Install and enable the REST API plugin
 echo "Installing and enabling OpenFire REST API plugin"
 sudo wget -O /tmp/restAPI.jar https://www.igniterealtime.org/projects/openfire/plugins/restAPI.jar
-sudo mkdir -p /usr/share/openfire/plugins/restapi/
-echo "plugin.restapi.enabled=true" | sudo tee /usr/share/openfire/plugins/restapi/plugin.properties > /dev/null
 sudo cp /tmp/restAPI.jar /usr/share/openfire/plugins/
 
 # WebSocket plugin
@@ -363,11 +377,6 @@ sudo mv /tmp/userImportExport.jar /usr/share/openfire/plugins/
 echo "Installing OpenFire S2S plugin"
 sudo wget -O /tmp/s2s.jar https://www.igniterealtime.org/projects/openfire/plugins/s2s.jar
 sudo mv /tmp/s2s.jar /usr/share/openfire/plugins/
-
-# Load Testing
-echo "Installing OpenFire Load Testing plugin"
-sudo wget -O /tmp/loadStats.jar https://www.igniterealtime.org/projects/openfire/plugins/loadStats.jar
-sudo mv /tmp/loadStats.jar /usr/share/openfire/plugins/
 
 # Restart nginx to apply the new configuration
 echo "Restarting Nginx"
@@ -427,20 +436,28 @@ echo "Database credentials saved to ~/server_config.txt"
 echo "Setting recommended OpenFire system properties"
 
 # Wait for plugins to load
-sleep 30
+wait_for_openfire
 
 # Increase resource cache size
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"1000\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/cache.fileTransfer.size
+curl -X PUT -H "Content-Type: application/json" \
+     -u "admin:${OF_ADMIN_PWD}" \
+     -d "{\"value\":\"1000\"}" \
+  http://localhost:9090/plugins/restapi/v1/system/properties/cache.fileTransfer.size
 
 # Increase maximum MUC history size
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"200\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.history.maxNumber
+curl -X PUT -H "Content-Type: application/json" \
+     -u "admin:${OF_ADMIN_PWD}" \
+     -d "{\"value\":\"200\"}" \
+  http://localhost:9090/plugins/restapi/v1/system/properties/xmpp.muc.history.maxNumber
 
 # Enable CORS for HTTP binding (needed for Jitsi web clients)
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"true\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.httpbind.client.cors.enabled
+curl -X PUT -H "Content-Type: application/json" \
+     -u "admin:${OF_ADMIN_PWD}" \
+     -d "{\"value\":\"true\"}" \
+  http://localhost:9090/plugins/restapi/v1/system/properties/xmpp.httpbind.client.cors.enabled
 
 # Set session timeout higher for long meetings
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"120\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.session.timeout
+curl -X PUT -H "Content-Type: application/json" \
+     -u "admin:${OF_ADMIN_PWD}" \
+     -d "{\"value\":\"120\"}" \
+  http://localhost:9090/plugins/restapi/v1/system/properties/xmpp.session.timeout
