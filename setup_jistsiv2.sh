@@ -338,9 +338,9 @@ echo "Configuring Jitsi Meet to use OpenFire"
 sudo sed -i "s/muc:.*/muc: '${FQDN}',/" /etc/jitsi/meet/${FQDN}-config.js
 sudo sed -i "s/// bosh:.*/bosh: '//${FQDN}/http-bind',/" /etc/jitsi/meet/${FQDN}-config.js
 
-# Configure Jicofo to use OpenFire
+# Configure Jicofo to use OpenFire - correct format
 echo "Configuring Jicofo for OpenFire"
-sudo tee /etc/jitsi/jicofo/config > /dev/null << EOF
+sudo tee /etc/jitsi/jicofo/jicofo.conf > /dev/null << EOF
 jicofo {
   authentication {
     enabled = true
@@ -361,6 +361,19 @@ jicofo {
     }
   }
 }
+EOF
+
+# Create the old-style config for backward compatibility
+echo "Creating legacy Jicofo configuration"
+sudo tee /etc/jitsi/jicofo/config > /dev/null << EOF
+# Jitsi Conference Focus settings
+JICOFO_HOST=localhost
+JICOFO_HOSTNAME=${FQDN}
+
+# XMPP components
+JICOFO_AUTH_USER=focus
+JICOFO_AUTH_PASSWORD=${FOCUS_PASSWORD}
+JICOFO_PORT=5222
 EOF
 
 # Configure JVB to use OpenFire
