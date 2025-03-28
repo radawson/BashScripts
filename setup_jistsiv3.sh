@@ -53,7 +53,6 @@ DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FOCUS_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 JVB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FQDN="meet.${DOMAIN}"
-OF_FQDN="openfire.${DOMAIN}"
 
 ## System Preparation
 # Update and upgrade the system
@@ -118,16 +117,17 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 # Install Nginx
 echo "Installing Nginx"
 sudo apt-get install nginx
+sudo systemctl stop nginx
 
 cat <<EOF | sudo tee /etc/nginx/sites-available/${DOMAIN}
 server {
     listen 80;
     listen [::]:80;
-    server_name meet.notaspy.org;
+    server_name ${FQDN} ${OF_FQDN};
 
     # Redirect HTTP to HTTPS
     location / {
-        return 301 https://$host$request_uri;
+        return 301 https://\$host\$request_uri;
     }
 
     # For Let's Encrypt verification
@@ -140,11 +140,11 @@ server {
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name meet.notaspy.org;
+    server_name ${FQDN};
 
     # SSL configuration
-    ssl_certificate /etc/letsencrypt/live/meet.notaspy.org/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/meet.notaspy.org/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${FQDN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${FQDN}/privkey.pem;
 
     # SSL settings
     ssl_protocols TLSv1.2 TLSv1.3;
@@ -218,7 +218,10 @@ sudo -u postgres psql -c "ALTER USER openfire WITH SUPERUSER;"
 # Get certificate for the openfire domain using certbot
 echo "Obtaining SSL certificate for ${FQDN}"
 sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@${DOMAIN} \
-  -d ${FQDN} -d ${OF_FQDN} --preferred-challenges http-01
+  -d ${FQDN} --preferred-challenges http-01
+
+# After certificate generation
+OF_CERTS=$(sudo ls /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/letsencrypt/live/${FQDN}/privkey.pem 2>/dev/null)
 
 # After getting certificates with certbot, copy them to OpenFire's directory
 echo "Copying certificates to OpenFire"
@@ -314,12 +317,27 @@ sudo systemctl restart openfire
 
 wait_for_openfire
 
+# Install booksmarks plugin
+echo "Installing OpenFire Bookmarks plugin"
+sudo wget -O /tmp/bookmarks.jar https://www.igniterealtime.org/projects/openfire/plugins/bookmarks.jar
+sudo mv /tmp/bookmarks.jar /usr/share/openfire/plugins/
 
+# Install Certificate Manager plugin
+echo "Installing OpenFire Certificate Manager plugin"
+sudo wget -O /tmp/certmanager.jar https://www.igniterealtime.org/projects/openfire/plugins/certmanager.jar
+sudo mv /tmp/certmanager.jar /usr/share/openfire/plugins/
 
-# Install OpenFire REST API plugin
-echo "Installing OpenFire REST API plugin"
+# Install Monitoring Service plugin
+echo "Installing OpenFire Monitoring Service plugin"
+sudo wget -O /tmp/monitoring.jar https://www.igniterealtime.org/projects/openfire/plugins/monitoring.jar
+sudo mv /tmp/monitoring.jar /usr/share/openfire/plugins/
+
+# Install and enable the REST API plugin
+echo "Installing and enabling OpenFire REST API plugin"
 sudo wget -O /tmp/restAPI.jar https://www.igniterealtime.org/projects/openfire/plugins/restAPI.jar
-sudo mv /tmp/restAPI.jar /usr/share/openfire/plugins/
+sudo mkdir -p /usr/share/openfire/plugins/restapi/
+echo "plugin.restapi.enabled=true" | sudo tee /usr/share/openfire/plugins/restapi/plugin.properties > /dev/null
+sudo cp /tmp/restAPI.jar /usr/share/openfire/plugins/
 
 # WebSocket plugin
 echo "Installing OpenFire WebSocket plugin"
@@ -341,11 +359,6 @@ echo "Installing OpenFire User Import/Export plugin"
 sudo wget -O /tmp/userImportExport.jar https://www.igniterealtime.org/projects/openfire/plugins/userImportExport.jar
 sudo mv /tmp/userImportExport.jar /usr/share/openfire/plugins/
 
-# Connection Manager
-echo "Installing OpenFire Connection Manager plugin"
-sudo wget -O /tmp/connectionmanager.jar https://www.igniterealtime.org/projects/openfire/plugins/connection_manager.jar
-sudo mv /tmp/connectionmanager.jar /usr/share/openfire/plugins/
-
 # S2S (Server-to-Server)
 echo "Installing OpenFire S2S plugin"
 sudo wget -O /tmp/s2s.jar https://www.igniterealtime.org/projects/openfire/plugins/s2s.jar
@@ -355,6 +368,13 @@ sudo mv /tmp/s2s.jar /usr/share/openfire/plugins/
 echo "Installing OpenFire Load Testing plugin"
 sudo wget -O /tmp/loadStats.jar https://www.igniterealtime.org/projects/openfire/plugins/loadStats.jar
 sudo mv /tmp/loadStats.jar /usr/share/openfire/plugins/
+
+# Restart nginx to apply the new configuration
+echo "Restarting Nginx"
+sudo systemctl restart nginx
+# Restart OpenFire to apply the new plugins
+echo "Restarting OpenFire"  
+sudo systemctl restart openfire
 
 
 ## Write Configuration to File
@@ -404,47 +424,23 @@ echo "Database credentials saved to ~/server_config.txt"
 
 ### Part 2
 # Set recommended system properties for Jitsi integration
-# echo "Setting recommended OpenFire system properties"
+echo "Setting recommended OpenFire system properties"
 
-# # Wait for plugins to load
-# sleep 30
+# Wait for plugins to load
+sleep 30
 
-# # Increase resource cache size
-# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"1000\"}" \
-#   http://localhost:9997/plugins/restapi/v1/system/properties/cache.fileTransfer.size
+# Increase resource cache size
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"1000\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/cache.fileTransfer.size
 
-# # Increase maximum MUC history size
-# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"200\"}" \
-#   http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.history.maxNumber
+# Increase maximum MUC history size
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"200\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.history.maxNumber
 
-# # Enable CORS for HTTP binding (needed for Jitsi web clients)
-# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"true\"}" \
-#   http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.httpbind.client.cors.enabled
+# Enable CORS for HTTP binding (needed for Jitsi web clients)
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"true\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.httpbind.client.cors.enabled
 
-# # Set session timeout higher for long meetings
-# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"120\"}" \
-#   http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.session.timeout
-
-# # Wait for settings to be activated
-# sleep 10
-
-# # Create the focus user and JVB user
-# echo "Creating required users via REST API"
-# curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"focus\",\"password\":\"${FOCUS_PASSWORD}\",\"name\":\"Focus User\",\"email\":\"focus@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
-# curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"jvb\",\"password\":\"${JVB_PASSWORD}\",\"name\":\"JVB User\",\"email\":\"jvb@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
-
-# # Create MUC room
-# # Update MUC room creation command
-# curl -X POST -H "Content-Type: application/json" -d "{\"roomName\":\"jvbbrewery\",\"naturalName\":\"JVB Brewery\",\"description\":\"JVB Conference Room\",\"persistent\":true,\"service\":\"conference.${FQDN}\"}" http://localhost:9997/plugins/restapi/v1/chatrooms
-# # Configure OpenFire for Jitsi
-# echo "Configuring OpenFire for Jitsi compatibility"
-
-# # Download and install required plugins
-# sudo wget -O /tmp/monitoring.jar https://www.igniterealtime.org/projects/openfire/plugins/monitoring.jar
-# sudo mv /tmp/monitoring.jar /usr/share/openfire/plugins/
-
-# # Enable anonymous login (required for Jitsi guests)
-# curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.anonymous.login.enabled
-
-# # Enable MUC service
-# curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.enabled
+# Set session timeout higher for long meetings
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"120\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.session.timeout
