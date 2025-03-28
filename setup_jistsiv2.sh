@@ -408,7 +408,29 @@ echo "Installing OpenFire Load Testing plugin"
 sudo wget -O /tmp/loadStats.jar https://www.igniterealtime.org/projects/openfire/plugins/loadStats.jar
 sudo mv /tmp/loadStats.jar /usr/share/openfire/plugins/
 
-# Wait for plugins to be activated
+# Set recommended system properties for Jitsi integration
+echo "Setting recommended OpenFire system properties"
+
+# Wait for plugins to load
+sleep 15
+
+# Increase resource cache size
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"1000\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/cache.fileTransfer.size
+
+# Increase maximum MUC history size
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"200\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.history.maxNumber
+
+# Enable CORS for HTTP binding (needed for Jitsi web clients)
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"true\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.httpbind.client.cors.enabled
+
+# Set session timeout higher for long meetings
+curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"120\"}" \
+  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.session.timeout
+
+# Wait for settings to be activated
 sleep 10
 
 # Create the focus user and JVB user
