@@ -1,5 +1,5 @@
 #!/bin/bash
-v3.0.0
+v3.0.1
 # This script sets up a Jitsi Meet server with OpenFire as the XMPP backend.
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
