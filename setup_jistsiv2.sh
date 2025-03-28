@@ -1,4 +1,6 @@
 #!/bin/bash
+v1.0.0
+# This script sets up a Jitsi Meet server with OpenFire as the XMPP backend.
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
     echo "Usage: $0 <DNS DOMAIN> [IP]"
@@ -336,7 +338,7 @@ sudo systemctl start openfire
 # Configure Jitsi Meet to use OpenFire instead of Prosody
 echo "Configuring Jitsi Meet to use OpenFire"
 sudo sed -i "s/muc:.*/muc: '${FQDN}',/" /etc/jitsi/meet/${FQDN}-config.js
-sudo sed -i "s| bosh:.*|bosh: '//${FQDN}/http-bind',|" /etc/jitsi/meet/${FQDN}-config.js
+sudo sed -i "s|bosh:.*|bosh: '//${FQDN}/http-bind',|" /etc/jitsi/meet/${FQDN}-config.js
 
 # Configure Jicofo to use OpenFire - correct format
 echo "Configuring Jicofo for OpenFire"
