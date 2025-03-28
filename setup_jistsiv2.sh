@@ -16,6 +16,22 @@ wait_for_apt() {
   echo -e "\n\nLocks released, proceeding with installation."
 }
 
+# Function to wait for OpenFire admin interface to be available
+wait_for_openfire() {
+  local attempts=0
+  echo "Waiting for OpenFire admin interface..."
+  while ! curl -s -o /dev/null http://localhost:9997; do
+    attempts=$((attempts+1))
+    if [ $attempts -gt 30 ]; then
+      echo "OpenFire admin interface not available after 5 minutes"
+      return 1
+    fi
+    echo "Waiting for OpenFire to start... ($attempts/30)"
+    sleep 10
+  done
+  echo "OpenFire admin interface is responding"
+  return 0
+
 DOMAIN=${1}
 if [[ $# -eq 2 ]]; then
     IP=${2}
@@ -412,7 +428,7 @@ sudo mv /tmp/loadStats.jar /usr/share/openfire/plugins/
 echo "Setting recommended OpenFire system properties"
 
 # Wait for plugins to load
-sleep 15
+sleep 30
 
 # Increase resource cache size
 curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"1000\"}" \
@@ -439,8 +455,8 @@ curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"focus\",\"p
 curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"jvb\",\"password\":\"${JVB_PASSWORD}\",\"name\":\"JVB User\",\"email\":\"jvb@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
 
 # Create MUC room
-curl -X POST -H "Content-Type: application/json" -d "{\"roomName\":\"jvbbrewery\",\"naturalName\":\"JVB Brewery\",\"description\":\"JVB Conference Room\",\"persistent\":true}" http://localhost:9997/plugins/restapi/v1/chatrooms
-
+# Update MUC room creation command
+curl -X POST -H "Content-Type: application/json" -d "{\"roomName\":\"jvbbrewery\",\"naturalName\":\"JVB Brewery\",\"description\":\"JVB Conference Room\",\"persistent\":true,\"service\":\"conference.${FQDN}\"}" http://localhost:9997/plugins/restapi/v1/chatrooms
 # Configure OpenFire for Jitsi
 echo "Configuring OpenFire for Jitsi compatibility"
 
