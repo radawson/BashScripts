@@ -1,5 +1,5 @@
 #!/bin/bash
-v1.0.0
+v3.0.0
 # This script sets up a Jitsi Meet server with OpenFire as the XMPP backend.
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -22,7 +22,7 @@ wait_for_apt() {
 wait_for_openfire() {
   local attempts=0
   echo "Waiting for OpenFire admin interface..."
-  while ! curl -s -o /dev/null http://localhost:9997; do
+  while ! curl -s -o /dev/null http://localhost:9090; do
     attempts=$((attempts+1))
     if [ $attempts -gt 30 ]; then
       echo "OpenFire admin interface not available after 5 minutes"
@@ -104,11 +104,6 @@ echo "Adding PostgreSQL repository"
 sudo apt-get install -y postgresql-common
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
 
-# Add Jitsi repository
-echo "Adding Jitsi repository"
-curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
-echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list >/dev/null
-
 # Update package list
 sudo apt-get update
 
@@ -137,20 +132,6 @@ sudo apt-get -y install maven
 echo "Installing PostgreSQL"
 sudo apt-get -y install postgresql
 
-# Install Jitsi
-echo "Installing Jitsi"
-sudo apt-get -y install jitsi-meet
-
-# Shut down prosody to prevent conflicts with OpenFire
-sudo systemctl stop prosody
-sudo systemctl disable prosody
-
-# Get Jitsi certs
-JITSI_CERTS=$(sudo ls /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/letsencrypt/live/${FQDN}/privkey.pem 2>/dev/null)
-
-#Shut down nginx to prevent conflicts with OpenFire
-sudo systemctl stop nginx
-
 # Install OpenFire
 echo "Installing OpenFire"
 wget https://www.igniterealtime.org/downloadServlet?filename=openfire/openfire_4.9.2_all.deb -O openfire.deb
@@ -165,16 +146,9 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE openfire TO openfire;
 sudo -u postgres psql -c "ALTER USER openfire WITH SUPERUSER;"
 
 # Get certificate for the openfire domain using certbot
-echo "Obtaining SSL certificate for ${OF_FQDN}"
+echo "Obtaining SSL certificate for ${FQDN}"
 sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@${DOMAIN} \
   -d ${FQDN} -d ${OF_FQDN} --preferred-challenges http-01
-
-## NOTE: IT looks like the OF_FQDN would only be used by nginx
-
-# Create a symlink to the certificate for Nginx
-#TODO: Either copy or symlink this new certificate pair into 
-# /etc/jitsi/meet/meet.clockworx.tech.crt
-# /etc/jitsi/meet/meet.clockworx.tech.key
 
 # After getting certificates with certbot, copy them to OpenFire's directory
 echo "Copying certificates to OpenFire"
@@ -203,6 +177,7 @@ sudo keytool -importkeystore \
   -deststorepass ${PKCS_PASSWORD} \
   -alias "${FQDN}"
 
+
 # Create truststore with the same certificate
 sudo keytool -import -trustcacerts -noprompt \
   -file /etc/openfire/security/fullchain.pem \
@@ -213,73 +188,10 @@ sudo keytool -import -trustcacerts -noprompt \
 # Set proper ownership
 sudo chown -R openfire:openfire /etc/openfire/security
 
-# Configure Nginx for Openfire
-echo "Configuring Nginx for Openfire"
-cat <<EOF | sudo tee /etc/nginx/sites-available/openfire.conf
-server {
-    listen 80;
-    server_name ${OF_FQDN};
+# Move keystores to default diredctory
+sudo cp /etc/openfire/security/keystore /usr/share/openfire/resources/security/
+sudo cp /etc/openfire/security/truststore /usr/share/openfire/resources/security/
 
-    location / {
-        proxy_pass http://localhost:9997;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_http_version 1.1;
-        
-        # Add WebSocket support
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-EOF
-
-# Only add SSL server block if certificates exist
-if sudo test -f /etc/letsencrypt/live/${FQDN}/fullchain.pem && sudo test -f /etc/letsencrypt/live/${FQDN}/privkey.pem; then
-    echo "Adding HTTPS configuration for OpenFire"
-    cat <<EOF | sudo tee -a /etc/nginx/sites-available/openfire.conf
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name ${OF_FQDN};
-
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:DHE-RSA-AES128-GCM-SHA256:DHE-RSA-AES256-GCM-SHA384;
-    ssl_prefer_server_ciphers off;
-
-    ssl_session_timeout 1d;
-    ssl_session_cache shared:SSL:10m; 
-    ssl_session_tickets off;
-
-    ssl_certificate /etc/letsencrypt/live/${FQDN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${FQDN}/privkey.pem;
-
-    location / {
-        proxy_pass http://localhost:9997;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_http_version 1.1;
-        
-        # Add WebSocket support
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection "upgrade";
-    }
-}
-EOF
-
-OF_CERTS=$(sudo ls /etc/letsencrypt/live/${OF_FQDN}/fullchain.pem /etc/letsencrypt/live/${OF_FQDN}/privkey.pem 2>/dev/null)
-else
-    echo "Warning: SSL certificates not found. HTTPS configuration for OpenFire not added."
-    echo "You can add it later by running certbot for ${OF_FQDN} and updating the Nginx configuration."
-OF_CERTS="SSL not installed"
-fi
-
-# Enable the Nginx site
-sudo ln -sf /etc/nginx/sites-available/openfire.conf /etc/nginx/sites-enabled/
-sudo systemctl start nginx
 
 # Autosetup for OpenFire
 echo "Creating autosetup file for OpenFire"
@@ -290,12 +202,24 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
   <autosetup>
     <run>true</run>
     <locale>en</locale>
+    
     <adminConsole>
-      <!-- Disable either port by setting the value to -1 -->
-      <port>9997</port>
-      <securePort>-1</securePort>
-      <interface>127.0.0.1</interface>
+      <port>9090</port>
+      <securePort>9091</securePort>
+      <interface>${IP}</interface>
     </adminConsole>
+    
+    <cross-domain>
+      <enabled>true</enabled>
+      <allow-all-domains>true</allow-all-domains>
+    </cross-domain>
+
+    <keystore>/etc/openfire/security/keystore</keystore>
+    <keystorePassword>${PKCS_PASSWORD}</keystorePassword>
+    <keyPassword></keyPassword>
+    <truststore>/etc/openfire/security/truststore</truststore>
+    <truststorePassword>${PKCS_PASSWORD}</truststorePassword>
+    
     <xmpp>
         <domain>${FQDN}</domain>
         <fqdn>${FQDN}</fqdn>
@@ -303,6 +227,7 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
             <anonymous>true</anonymous>
         </auth>
     </xmpp>
+    
     <database>
         <mode>standard</mode>
         <defaultProvider>
@@ -315,10 +240,12 @@ cat <<EOF | sudo tee /etc/openfire/openfire.xml
             <connectionTimeout>1.0</connectionTimeout>
         </defaultProvider>
     </database>
+    
     <admin>
       <email>admin@${DOMAIN}</email>
       <password>${OF_ADMIN_PWD}</password>
     </admin>
+
   </autosetup>
 </jive>    
 EOF
@@ -326,90 +253,8 @@ EOF
 # Restart OpenFire to apply the configuration
 echo "Restarting OpenFire"
 sudo systemctl restart openfire
-sleep 10
-sudo systemctl stop openfire
 
-# Create new XML content with proper admin console settings
-sudo sed -i 's|</jive>|<adminConsole>\
-    <port>9997</port>\
-    <securePort>-1</securePort>\
-    <interface>127.0.0.1</interface>\
-</adminConsole>\
-</jive>|' /etc/openfire/openfire.xml
-
-# Start OpenFire with the updated configuration
-sudo systemctl start openfire
-
-
-# Configure Jitsi Meet to use OpenFire instead of Prosody
-echo "Configuring Jitsi Meet to use OpenFire"
-sudo sed -i "s/muc:.*/muc: '${FQDN}',/" /etc/jitsi/meet/${FQDN}-config.js
-sudo sed -i "s|bosh:.*|bosh: '//${FQDN}/http-bind',|" /etc/jitsi/meet/${FQDN}-config.js
-
-# Configure Jicofo to use OpenFire - correct format
-echo "Configuring Jicofo for OpenFire"
-sudo tee /etc/jitsi/jicofo/jicofo.conf > /dev/null << EOF
-jicofo {
-  authentication {
-    enabled = true
-    type = XMPP
-    login-url = "${FQDN}"
-    enable-auto-login = true
-  }
-  
-  xmpp {
-    client {
-      enabled = true
-      hostname = "${FQDN}"
-      port = 5222
-      domain = "${FQDN}"
-      username = "focus"
-      password = "${FOCUS_PASSWORD}"
-      conference-muc-jid = "conference.${FQDN}"
-    }
-  }
-}
-EOF
-
-# Create the old-style config for backward compatibility
-echo "Creating legacy Jicofo configuration"
-sudo tee /etc/jitsi/jicofo/config > /dev/null << EOF
-# Jitsi Conference Focus settings
-JICOFO_HOST=localhost
-JICOFO_HOSTNAME=${FQDN}
-
-# XMPP components
-JICOFO_AUTH_USER=focus
-JICOFO_AUTH_PASSWORD=${FOCUS_PASSWORD}
-JICOFO_PORT=5222
-EOF
-
-# Configure JVB to use OpenFire
-echo "Configuring JVB for OpenFire"
-sudo tee /etc/jitsi/videobridge/config > /dev/null << EOF
-videobridge {
-  apis {
-    xmpp-client {
-      configs {
-        shard {
-          HOSTNAME = "${FQDN}"
-          PORT = "5222"
-          DOMAIN = "${FQDN}"
-          USERNAME = "jvb"
-          PASSWORD = "${JVB_PASSWORD}"
-          MUC_JIDS = "jvbbrewery@internal.${FQDN}"
-          MUC_NICKNAME = "jvb-\${ID}"
-          DISABLE_CERTIFICATE_VERIFICATION = true
-        }
-      }
-    }
-  }
-}
-EOF
-
-# Wait for OpenFire to be ready
-echo "Waiting for OpenFire to start..."
-sleep 20  # Basic wait, could be improved with a proper check
+wait_for_openfire
 
 # Install OpenFire REST API plugin
 echo "Installing OpenFire REST API plugin"
@@ -426,10 +271,10 @@ echo "Installing OpenFire HTTP File Upload plugin"
 sudo wget -O /tmp/httpfileupload.jar https://www.igniterealtime.org/projects/openfire/plugins/httpFileUpload.jar
 sudo mv /tmp/httpfileupload.jar /usr/share/openfire/plugins/
 
-# Jingle Nodes
-echo "Installing OpenFire Jingle Nodes plugin"
-sudo wget -O /tmp/jinglenodes.jar https://www.igniterealtime.org/projects/openfire/plugins/jinglenodes.jar
-sudo mv /tmp/jinglenodes.jar /usr/share/openfire/plugins/
+# Pade (Jitsi client)
+echo "Installing OpenFire Pade plugin"
+sudo wget -O /tmp/pade.jar https://www.igniterealtime.org/projects/openfire/plugins/pade.jar
+sudo mv /tmp/pade.jar /usr/share/openfire/plugins/
 
 # User Import/Export
 echo "Installing OpenFire User Import/Export plugin"
@@ -441,63 +286,16 @@ echo "Installing OpenFire Connection Manager plugin"
 sudo wget -O /tmp/connectionmanager.jar https://www.igniterealtime.org/projects/openfire/plugins/connection_manager.jar
 sudo mv /tmp/connectionmanager.jar /usr/share/openfire/plugins/
 
+# S2S (Server-to-Server)
+echo "Installing OpenFire S2S plugin"
+sudo wget -O /tmp/s2s.jar https://www.igniterealtime.org/projects/openfire/plugins/s2s.jar
+sudo mv /tmp/s2s.jar /usr/share/openfire/plugins/
+
 # Load Testing
 echo "Installing OpenFire Load Testing plugin"
 sudo wget -O /tmp/loadStats.jar https://www.igniterealtime.org/projects/openfire/plugins/loadStats.jar
 sudo mv /tmp/loadStats.jar /usr/share/openfire/plugins/
 
-# Set recommended system properties for Jitsi integration
-echo "Setting recommended OpenFire system properties"
-
-# Wait for plugins to load
-sleep 30
-
-# Increase resource cache size
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"1000\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/cache.fileTransfer.size
-
-# Increase maximum MUC history size
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"200\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.history.maxNumber
-
-# Enable CORS for HTTP binding (needed for Jitsi web clients)
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"true\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.httpbind.client.cors.enabled
-
-# Set session timeout higher for long meetings
-curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"120\"}" \
-  http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.session.timeout
-
-# Wait for settings to be activated
-sleep 10
-
-# Create the focus user and JVB user
-echo "Creating required users via REST API"
-curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"focus\",\"password\":\"${FOCUS_PASSWORD}\",\"name\":\"Focus User\",\"email\":\"focus@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
-curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"jvb\",\"password\":\"${JVB_PASSWORD}\",\"name\":\"JVB User\",\"email\":\"jvb@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
-
-# Create MUC room
-# Update MUC room creation command
-curl -X POST -H "Content-Type: application/json" -d "{\"roomName\":\"jvbbrewery\",\"naturalName\":\"JVB Brewery\",\"description\":\"JVB Conference Room\",\"persistent\":true,\"service\":\"conference.${FQDN}\"}" http://localhost:9997/plugins/restapi/v1/chatrooms
-# Configure OpenFire for Jitsi
-echo "Configuring OpenFire for Jitsi compatibility"
-
-# Download and install required plugins
-sudo wget -O /tmp/monitoring.jar https://www.igniterealtime.org/projects/openfire/plugins/monitoring.jar
-sudo mv /tmp/monitoring.jar /usr/share/openfire/plugins/
-
-# Enable anonymous login (required for Jitsi guests)
-curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.anonymous.login.enabled
-
-# Enable MUC service
-curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.enabled
-
-# Restart all Jitsi components
-echo "Restarting Jitsi services"
-sudo systemctl restart jicofo
-sudo systemctl restart jitsi-videobridge2
-sudo systemctl restart nginx
-sudo systemctl restart openfire
 
 ## Write Configuration to File
 # Save host data to file for reference
@@ -543,3 +341,50 @@ OpenFire Admin:
 EOF
 chmod 600 ~/server_config.txt
 echo "Database credentials saved to ~/server_config.txt"
+
+### Part 2
+# Set recommended system properties for Jitsi integration
+# echo "Setting recommended OpenFire system properties"
+
+# # Wait for plugins to load
+# sleep 30
+
+# # Increase resource cache size
+# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"1000\"}" \
+#   http://localhost:9997/plugins/restapi/v1/system/properties/cache.fileTransfer.size
+
+# # Increase maximum MUC history size
+# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"200\"}" \
+#   http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.history.maxNumber
+
+# # Enable CORS for HTTP binding (needed for Jitsi web clients)
+# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"true\"}" \
+#   http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.httpbind.client.cors.enabled
+
+# # Set session timeout higher for long meetings
+# curl -X PUT -H "Content-Type: application/json" -d "{\"value\":\"120\"}" \
+#   http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.session.timeout
+
+# # Wait for settings to be activated
+# sleep 10
+
+# # Create the focus user and JVB user
+# echo "Creating required users via REST API"
+# curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"focus\",\"password\":\"${FOCUS_PASSWORD}\",\"name\":\"Focus User\",\"email\":\"focus@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
+# curl -X POST -H "Content-Type: application/json" -d "{\"username\":\"jvb\",\"password\":\"${JVB_PASSWORD}\",\"name\":\"JVB User\",\"email\":\"jvb@${DOMAIN}\"}" http://localhost:9997/plugins/restapi/v1/users
+
+# # Create MUC room
+# # Update MUC room creation command
+# curl -X POST -H "Content-Type: application/json" -d "{\"roomName\":\"jvbbrewery\",\"naturalName\":\"JVB Brewery\",\"description\":\"JVB Conference Room\",\"persistent\":true,\"service\":\"conference.${FQDN}\"}" http://localhost:9997/plugins/restapi/v1/chatrooms
+# # Configure OpenFire for Jitsi
+# echo "Configuring OpenFire for Jitsi compatibility"
+
+# # Download and install required plugins
+# sudo wget -O /tmp/monitoring.jar https://www.igniterealtime.org/projects/openfire/plugins/monitoring.jar
+# sudo mv /tmp/monitoring.jar /usr/share/openfire/plugins/
+
+# # Enable anonymous login (required for Jitsi guests)
+# curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.anonymous.login.enabled
+
+# # Enable MUC service
+# curl -X PUT -H "Content-Type: application/json" -d "{\"enabled\":true}" http://localhost:9997/plugins/restapi/v1/system/properties/xmpp.muc.enabled
