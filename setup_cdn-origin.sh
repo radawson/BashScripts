@@ -173,7 +173,7 @@ sudo tee /var/www/content/index.html > /dev/null <<EOF
 </head>
 <body>
     <h1>CDN Origin Server: ${FQDN}</h1>
-    <p>This server is the origin server for your custom CDN network.</p>
+    <p>This server is the origin server for the Technical Operations Group CDN network.</p>
     <p>IP Address: ${IP}</p>
     <p>Current time: <span id="timestamp"></span></p>
     
@@ -310,7 +310,7 @@ sudo systemctl enable wg-quick@wg0
 sudo systemctl start wg-quick@wg0
 
 # Save configuration information
-PUBLIC_KEY=$(cat /etc/wireguard/server_public.key)
+PUBLIC_KEY=$(sudo cat /etc/wireguard/server_public.key)
 echo "Saving configuration data"
 cat <<EOF >~/origin_server_config.txt
 -- CDN Origin Server Configuration --
