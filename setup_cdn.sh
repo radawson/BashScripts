@@ -1,5 +1,6 @@
 #!/bin/bash
 #v1.0.0
+# (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
 if [[ $# -lt 1 || $# -gt 3 ]]; then
@@ -18,12 +19,21 @@ wait_for_apt() {
   echo -e "\n\nLocks released, proceeding with installation."
 }
 
-# Set variables
+# Set variables and validate CDN number
 CDN_NUMBER=${1}
 if [[ ! "${CDN_NUMBER}" =~ ^[0-9]+$ ]]; then
     echo "Error: CDN NUMBER must be a positive integer."
     exit 1
 fi
+
+# Ensure CDN_NUMBER is between 1 and 254 (valid IP range)
+if [[ "${CDN_NUMBER}" -lt 1 || "${CDN_NUMBER}" -gt 254 ]]; then
+    echo "Error: CDN NUMBER must be between 1 and 254."
+    exit 1
+fi
+
+# Format CDN_NUMBER with leading zeros for hostname
+CDN_NUMBER_PADDED=$(printf "%03d" ${CDN_NUMBER})
 
 # Set domain name
 if [[ $# -ge 2 ]]; then
@@ -283,7 +293,7 @@ sudo tee /var/www/html/index.html > /dev/null <<EOF
 </head>
 <body>
     <h1>CDN Node: ${FQDN}</h1>
-    <p>This server is part of your custom CDN network.</p>
+    <p>Technical Operations Group CDN network.</p>
     <p>IP Address: ${IP}</p>
 </body>
 </html>
