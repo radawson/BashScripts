@@ -285,7 +285,7 @@ echo "==============="
 echo "Number | IP Address  | Public Key                                  | Last Handshake"
 echo "----------------------------------------------------------------------"
 
-wg show wg0 | grep -A 3 peer | while read -r line; do
+sudo wg show wg0 | grep -A 3 peer | while read -r line; do
     if [[ "\$line" == peer* ]]; then
         PEER=\$(echo "\$line" | awk '{print \$2}')
         read -r endpoint_line
