@@ -2,7 +2,7 @@
 #v1.0.0
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
+if [[ $# -lt 1 || $# -gt 3 ]]; then
     echo "Usage: $0 <CDN NUMBER> [DOMAIN] [IP]"
     exit 1
 fi
@@ -24,8 +24,9 @@ if [[ ! "${CDN_NUMBER}" =~ ^[0-9]+$ ]]; then
     echo "Error: CDN NUMBER must be a positive integer."
     exit 1
 fi
+
 # Set domain name
-if [[ $# -eq 2 ]]; then
+if [[ $# -ge 2 ]]; then
     DOMAIN=${2}
     if [[ ! "${DOMAIN}" =~ ^[a-zA-Z0-9.-]+$ ]]; then
       echo "Error: Invalid domain name format."
@@ -35,18 +36,24 @@ else
     DOMAIN="techopsgroup.com"
     echo "No domain provided, using default: ${DOMAIN}"
 fi
+
+# Set IP address
+if [[ $# -eq 3 ]]; then
+    IP=${3}
+else
+    IP=$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print $4}' | cut -d/ -f1)
+fi
 if [[ -z "${IP}" ]]; then
     echo "Unable to determine IP address. Please provide it as the third argument."
     exit 1
 fi
+
 FQDN="cdn${CDN_NUMBER}.${DOMAIN}"
 
-
-echo "Setting up CDN server with domain ${DOMAIN} and IP ${IP}"
+echo "Setting up CDN server with FQDN ${FQDN} and IP ${IP}"
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
-FQDN="${DOMAIN}"
 
 ## System Preparation
 # Update and upgrade the system
@@ -70,6 +77,7 @@ sudo ufw allow 53/tcp    # DNS TCP
 sudo ufw allow 53/udp    # DNS UDP
 sudo ufw allow 80/tcp    # HTTP
 sudo ufw allow 443/tcp   # HTTPS
+sudo ufw allow 51822/udp # WireGuard
 sudo ufw --force enable
 
 ## Repository Preparation
@@ -107,27 +115,22 @@ echo "Installing PowerDNS and dependencies"
 wait_for_apt
 sudo apt-get -y install pdns-server pdns-backend-pgsql
 
-# Install GeoIP databases and tools
-echo "Installing GeoIP support"
+# Install tools for GeoIP database download
+echo "Installing curl and unzip for GeoIP database download"
 wait_for_apt
-sudo apt-get -y install geoip-database geoipupdate
-sudo mkdir -p /usr/share/GeoIP
+sudo apt-get -y install curl unzip
 
-# Download latest GeoLite2 databases (requires MaxMind account)
-# Comment this out if you don't have a MaxMind account
-# echo "Downloading latest GeoIP databases"
-# sudo tee /etc/GeoIP.conf > /dev/null <<EOF
-# AccountID YOUR_ACCOUNT_ID
-# LicenseKey YOUR_LICENSE_KEY
-# EditionIDs GeoLite2-Country GeoLite2-City
-# EOF
-# sudo geoipupdate
+# Download GeoIP databases from P3TERX GitHub repo
+echo "Downloading GeoIP databases from P3TERX GitHub repository"
+sudo mkdir -p /usr/share/GeoIP
+sudo curl -L https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb -o /usr/share/GeoIP/GeoLite2-City.mmdb
+sudo curl -L https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb -o /usr/share/GeoIP/GeoLite2-Country.mmdb
+sudo chmod 644 /usr/share/GeoIP/*.mmdb
 
 # Install WireGuard
 echo "Installing WireGuard"
 wait_for_apt
 sudo apt-get -y install wireguard wireguard-tools
-
 
 ## Software configuration
 # Configure PostgreSQL
@@ -236,12 +239,12 @@ server {
     
     # Root web content
     location / {
-      proxy_pass https://origin.techopsgroup.com;
+      proxy_pass https://10.10.0.1;  # WireGuard IP of origin server
       proxy_cache cdn_cache;
       proxy_cache_valid 200 302 60m;
       proxy_cache_valid 404 5m;
-      proxy_set_header Host $host;
-      proxy_set_header X-Real-IP $remote_addr;
+      proxy_set_header Host \$host;
+      proxy_set_header X-Real-IP \$remote_addr;
     
       # Avoid redirect loops
       proxy_redirect off;
@@ -253,7 +256,9 @@ server {
     
     # Static content caching (adjust paths as needed)
     location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
-        root /var/www/html;
+        proxy_pass https://10.10.0.1;
+        proxy_cache cdn_cache;
+        proxy_cache_valid 200 302 7d;
         expires 30d;
         add_header Cache-Control "public, max-age=2592000";
         access_log off;
@@ -305,12 +310,12 @@ if [ -z "${PRIVATE_KEY}" ]; then
     echo "Error: Failed to generate WireGuard private key."
     exit 1
 fi
-if [ ! -f "${WG_CONFIG}" ]; then
-    echo "Creating WireGuard configuration file"
-    sudo tee "${WG_CONFIG}" > /dev/null <<EOF
-    [Interface]
+
+echo "Creating WireGuard configuration file"
+sudo tee "${WG_CONFIG}" > /dev/null <<EOF
+[Interface]
 PrivateKey = ${PRIVATE_KEY}
-Address = 10.10.0.${CDN_NUMBER}/32
+Address = 10.10.0.${CDN_NUMBER}/24
 
 [Peer]
 PublicKey = <server_public_key>
@@ -321,15 +326,17 @@ EOF
 
 # Enable WireGuard
 sudo systemctl enable wg-quick@wg0
-sudo systemctl start wg-quick@wg0
+# Don't start WireGuard yet as the server public key needs to be filled in
 
 ## Write Configuration to File
-# Save configuration to file for reference
+# Save configuration data and WireGuard public key
+PUBLIC_KEY=$(cat /etc/wireguard/client_public.key)
 echo "Saving configuration data"
 cat <<EOF >~/cdn_server_config.txt
 -- CDN Server Configuration --
 FQDN: ${FQDN}
 IP Address: ${IP}
+WireGuard Public Key: ${PUBLIC_KEY}
 
 PowerDNS Database:
     Database Type: PostgreSQL
@@ -343,10 +350,12 @@ Configuration Files:
     PowerDNS: /etc/powerdns/pdns.conf
     GeoIP Zones: /etc/powerdns/geo-zones.yaml
     NGINX: /etc/nginx/sites-available/${FQDN}
+    WireGuard: /etc/wireguard/wg0.conf
 EOF
 
 echo "CDN server setup complete!"
 echo "Next steps:"
-echo "1. Configure zone transfers from your main DNS server"
-echo "2. Update the GeoIP zones file at /etc/powerdns/geo-zones.yaml"
-echo "3. Configure your primary content repository"
+echo "1. Edit /etc/wireguard/wg0.conf to add the server's public key and correct endpoint IP"
+echo "2. Start WireGuard with: sudo systemctl start wg-quick@wg0"
+echo "3. Configure zone transfers from your main DNS server"
+echo "4. Update the GeoIP zones file at /etc/powerdns/geo-zones.yaml"
