@@ -83,6 +83,7 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 echo "Installing NGINX"
 wait_for_apt
 sudo apt-get -y install nginx
+sudo systemctl stop nginx
 
 # Install WireGuard
 echo "Installing WireGuard"
@@ -156,6 +157,9 @@ EOF
     # Enable the site
     sudo ln -sf /etc/nginx/sites-available/${FQDN} /etc/nginx/sites-enabled/
 fi
+
+# Restart nginx
+sudo systemctl start nginx
 
 # Create sample content
 sudo tee /var/www/content/index.html > /dev/null <<EOF
