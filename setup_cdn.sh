@@ -58,9 +58,10 @@ if [[ -z "${IP}" ]]; then
     exit 1
 fi
 
-FQDN="cdn${CDN_NUMBER}.${DOMAIN}"
+FQDN="cdn${CDN_NUMBER_PADDED}.${DOMAIN}"
 
 echo "Setting up CDN server with FQDN ${FQDN} and IP ${IP}"
+echo "This server will use WireGuard IP 10.10.0.${CDN_NUMBER}"
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
@@ -320,16 +321,19 @@ if [ -z "${PRIVATE_KEY}" ]; then
     echo "Error: Failed to generate WireGuard private key."
     exit 1
 fi
+WG_IP="10.10.0.${CDN_NUMBER}/24"
 
 echo "Creating WireGuard configuration file"
 sudo tee "${WG_CONFIG}" > /dev/null <<EOF
 [Interface]
 PrivateKey = ${PRIVATE_KEY}
-Address = 10.10.0.${CDN_NUMBER}/24
+Address = ${WG_IP}
+ListenPort = 51822
+SaveConfig = true
 
 [Peer]
 PublicKey = <server_public_key>
-Endpoint = <origin_server_public_ip>:51822
+Endpoint = origin.techopsgroup.com:51822
 AllowedIPs = 10.10.0.0/24
 PersistentKeepalive = 25
 EOF
