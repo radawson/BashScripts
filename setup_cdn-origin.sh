@@ -1103,11 +1103,8 @@ sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@$
 echo "Creating enhanced NGINX configuration for fast transfers"
 sudo tee -a /etc/nginx/conf.d/file-transfer-optimizations.conf >/dev/null <<'EOF'
 # Optimizations for large file transfers
-sendfile on;
-tcp_nopush on;
 tcp_nodelay on;
 keepalive_timeout 65;
-types_hash_max_size 2048;
 
 # File upload optimizations
 client_max_body_size 1024M;
@@ -1166,20 +1163,20 @@ server {
         auth_basic_user_file /etc/nginx/.htpasswd;
         proxy_pass http://localhost:3000/;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_cache_bypass $http_upgrade;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
     }
 
     # For testing purposes, return client information as JSON
     location = /remote-info {
         default_type application/json;
         # JSON with client information
-        return 200 '{"ip": "$remote_addr", "server": "$hostname", "headers": {"User-Agent": "$http_user_agent", "Accept-Language": "$http_accept_language", "Host": "$host", "Referer": "$http_referer", "X-Forwarded-For": "$http_x_forwarded_for", "X-Real-IP": "$http_x_real_ip", "Via": "$http_via", "X-Cache-Status": "$upstream_cache_status"}}';
+        return 200 '{"ip": "\$remote_addr", "server": "\$hostname", "headers": {"User-Agent": "\$http_user_agent", "Accept-Language": "\$http_accept_language", "Host": "\$host", "Referer": "\$http_referer", "X-Forwarded-For": "\$http_x_forwarded_for", "X-Real-IP": "\$http_x_real_ip", "Via": "\$http_via", "X-Cache-Status": "\$upstream_cache_status"}}';
     }
 
     # Static content with longer cache times

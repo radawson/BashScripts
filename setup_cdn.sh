@@ -266,6 +266,13 @@ server {
     add_header X-Cache-Status \$upstream_cache_status;
     add_header X-CDN-Node "${FQDN}";
     
+    # Health check endpoint for HAProxy
+    location = /health {
+        access_log off;
+        add_header Content-Type text/plain;
+        return 200 'OK';
+    }
+    
     # Root web content
     location / {
       proxy_pass http://10.10.0.1;
@@ -274,6 +281,8 @@ server {
       proxy_cache_valid 404 5m;
       proxy_set_header Host \$host;
       proxy_set_header X-Real-IP \$remote_addr;
+      proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+      proxy_set_header X-Forwarded-Proto \$scheme;
       
       # Increase timeouts
       proxy_connect_timeout 60s;
@@ -289,7 +298,7 @@ server {
         default_type application/json;
         
         # Create JSON with client information
-        return 200 '{"ip": "$remote_addr", "server": "$hostname", "headers": {"User-Agent": "$http_user_agent", "Accept-Language": "$http_accept_language", "Host": "$host", "Referer": "$http_referer", "X-Forwarded-For": "$http_x_forwarded_for", "X-Real-IP": "$http_x_real_ip", "Via": "$http_via", "X-Cache-Status": "$upstream_cache_status"}}';
+        return 200 '{"ip": "\$remote_addr", "server": "\$hostname", "headers": {"User-Agent": "\$http_user_agent", "Accept-Language": "\$http_accept_language", "Host": "\$host", "Referer": "\$http_referer", "X-Forwarded-For": "\$http_x_forwarded_for", "X-Real-IP": "\$http_x_real_ip", "Via": "\$http_via", "X-Cache-Status": "\$upstream_cache_status"}}';
     }
 
     location ~ /\.well-known/acme-challenge {
