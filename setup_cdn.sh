@@ -366,7 +366,7 @@ ListenPort = 51822
 SaveConfig = true
 
 [Peer]
-PublicKey = 4VpZ/s+iJcsGb60WYlOClOxMujdyVHbYYopYimxYTxc=
+PublicKey = PrYukBiT8wIxbUNLswyrBSCdoAhJOjIejhccFDzBxXI=
 Endpoint = origin.techopsgroup.com:51822
 AllowedIPs = 10.10.0.0/24
 PersistentKeepalive = 25
@@ -420,6 +420,12 @@ EOF
 
 # Make the script executable
 sudo chmod +x /usr/local/bin/pull-geozones.sh
+
+# Add origin SSH key to root's authorized keys
+sudo mkdir -p /root/.ssh
+sudo tee -a /root/.ssh/authorized_keys > /dev/null <<EOF
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIbGyExkYKUy/DqZDcdYv+nzSlUnbMh1A1kXDn505/Kd root@origin.techopsgroup.com
+EOF
 
 # Set up SSH key for root user if it doesn't exist
 if [ ! -f /root/.ssh/id_ed25519 ]; then
