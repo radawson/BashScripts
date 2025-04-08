@@ -163,21 +163,21 @@ sudo tee /etc/powerdns/pdns.conf > /dev/null <<EOF
 # Basic settings
 setuid=pdns
 setgid=pdns
-#launch=gpgsql
+#launch=gpgsql,reoip
 
 # Network settings for PowerDNS
 local-address=${IP},${CDN_IP}
 local-port=53
 
 # PostgreSQL backend settings
-gpgsql-host=localhost
-gpgsql-user=pdns_user
-gpgsql-password=${DB_PASSWORD}
-gpgsql-dbname=pdns
-gpgsql-dnssec=yes
+#gpgsql-host=localhost
+#gpgsql-user=pdns_user
+#gpgsql-password=${DB_PASSWORD}
+#gpgsql-dbname=pdns
+#gpgsql-dnssec=yes
 
 # GeoIP backend - using correct settings for PowerDNS 4.8
-launch+=geoip
+launch=geoip
 geoip-database-files=/usr/share/GeoIP/GeoLite2-Country.mmdb
 geoip-zones-file=/etc/powerdns/geo-zones.yaml
 
