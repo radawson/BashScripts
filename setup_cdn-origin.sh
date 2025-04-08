@@ -343,37 +343,58 @@ sudo chmod +x /usr/local/bin/list-cdn-nodes
 echo "Creating GeoIP configuration"
 sudo mkdir -p /etc/powerdns
 sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
+---
 # GeoIP Configuration for ${DOMAIN} CDN
 zones:
-  cdn.${DOMAIN}:
-    - domain: cdn.${DOMAIN}
-      ttl: 300
-      records:
-        origin.${DOMAIN}:
-          - content: 10.10.0.1
-            type: A
-        # Geographic assignments will be added below
-        us-east:
-          - content: 10.10.0.1  # Default to origin until nodes added
-            type: A
-        us-west:
-          - content: 10.10.0.1  # Default to origin until nodes added
-            type: A
-        europe:
-          - content: 10.10.0.1  # Default to origin until nodes added
-            type: A
-        asia:
-          - content: 10.10.0.1  # Default to origin until nodes added
-            type: A
-        default:
-          - content: 10.10.0.1  # Origin is default fallback
-            type: A
-      services:
-        # Use geographic routing for all cdn.${DOMAIN} subdomains
-        "*.cdn.${DOMAIN}": 
-          - "%co.cdn.${DOMAIN}"  # Match by country first
-          - "%cn.cdn.${DOMAIN}"  # Try continent match next
-          - "default.cdn.${DOMAIN}"  # Default fallback
+  cdn.techopsgroup.com:
+    domain: cdn.techopsgroup.com
+    ttl: 300
+    records:
+      # CDN node records with public IPs
+      cdn001:
+        - content: 149.154.27.178
+          type: A
+      cdn002:
+        - content: 155.138.211.253
+          type: A
+      
+      # Geographic routing - Countries
+      us:
+        - content: 155.138.211.253
+          type: A
+      ca:
+        - content: 155.138.211.253
+          type: A
+      gb:
+        - content: 149.154.27.178
+          type: A
+      
+      # Geographic routing - Continents
+      north-america:
+        - content: 155.138.211.253
+          type: A
+      europe:
+        - content: 149.154.27.178
+          type: A
+      
+      # Default fallback
+      default:
+        - content: 149.154.27.178
+          type: A
+    
+    # Service mappings
+    services:
+      # Main CDN hostname
+      "${FQDN}":
+        - "%co.${FQDN}"
+        - "%cn.${FQDN}"
+        - "default.${FQDN}"
+      
+      # All subdomains
+      "*.${FQDN}":
+        - "%co.${FQDN}"
+        - "%cn.${FQDN}"
+        - "default.${FQDN}"
 EOF
 
 # Set proper permissions for the geo-zones.yaml file
