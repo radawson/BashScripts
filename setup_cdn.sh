@@ -284,6 +284,14 @@ server {
       proxy_redirect off;
     }
 
+    # For testing purposes, return client information as JSON
+    location = /remote-info {
+        default_type application/json;
+        
+        # Create JSON with client information
+        return 200 '{"ip": "$remote_addr", "server": "$hostname", "headers": {"User-Agent": "$http_user_agent", "Accept-Language": "$http_accept_language", "Host": "$host", "Referer": "$http_referer", "X-Forwarded-For": "$http_x_forwarded_for", "X-Real-IP": "$http_x_real_ip", "Via": "$http_via", "X-Cache-Status": "$upstream_cache_status"}}';
+    }
+
     location ~ /\.well-known/acme-challenge {
         allow all;
     }

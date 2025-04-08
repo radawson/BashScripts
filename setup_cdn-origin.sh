@@ -144,6 +144,14 @@ server {
         add_header Cache-Control "public, max-age=3600";
     }
 
+    # For testing purposes, return client information as JSON
+    location = /remote-info {
+        default_type application/json;
+        
+        # Create JSON with client information
+        return 200 '{"ip": "$remote_addr", "server": "$hostname", "headers": {"User-Agent": "$http_user_agent", "Accept-Language": "$http_accept_language", "Host": "$host", "Referer": "$http_referer", "X-Forwarded-For": "$http_x_forwarded_for", "X-Real-IP": "$http_x_real_ip", "Via": "$http_via", "X-Cache-Status": "$upstream_cache_status"}}';
+    }
+
     location ~ /\.well-known/acme-challenge {
         allow all;
     }
@@ -217,6 +225,277 @@ sudo tee /var/www/content/index.html > /dev/null <<EOF
         }
         setInterval(updateTimestamp, 1000);
         updateTimestamp();
+    </script>
+</body>
+</html>
+EOF
+
+# Create a remote.html file in the content directory
+sudo tee /var/www/content/remote.html > /dev/null <<EOF
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CDN Remote Client Information</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            color: #333;
+        }
+        h1 {
+            color: #0066cc;
+            border-bottom: 2px solid #eee;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #0099cc;
+            margin-top: 25px;
+        }
+        .info-section {
+            background-color: #f8f8f8;
+            border-radius: 5px;
+            padding: 15px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .info-row {
+            display: flex;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+        }
+        .info-label {
+            font-weight: bold;
+            width: 200px;
+            color: #555;
+        }
+        .info-value {
+            flex: 1;
+        }
+        #map-container {
+            height: 300px;
+            margin-top: 20px;
+            display: none;
+        }
+        .server-tag {
+            display: inline-block;
+            padding: 4px 8px;
+            background-color: #28a745;
+            color: white;
+            border-radius: 4px;
+            font-size: 14px;
+            margin-left: 10px;
+        }
+        .error {
+            color: #dc3545;
+        }
+    </style>
+</head>
+<body>
+    <h1>CDN Remote Client Information <span id="origin-tag" class="server-tag">Origin Server</span></h1>
+    
+    <div class="info-section">
+        <h2>Connection Information</h2>
+        <div class="info-row">
+            <div class="info-label">Your IP Address:</div>
+            <div id="ip-address" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">CDN Server:</div>
+            <div id="cdn-server" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Protocol:</div>
+            <div id="protocol" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Connection Type:</div>
+            <div id="connection-type" class="info-value">Loading...</div>
+        </div>
+    </div>
+
+    <div class="info-section">
+        <h2>Browser Information</h2>
+        <div class="info-row">
+            <div class="info-label">User Agent:</div>
+            <div id="user-agent" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Browser:</div>
+            <div id="browser" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Operating System:</div>
+            <div id="os" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Screen Resolution:</div>
+            <div id="screen-resolution" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Window Size:</div>
+            <div id="window-size" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Color Depth:</div>
+            <div id="color-depth" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Timezone:</div>
+            <div id="timezone" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Language:</div>
+            <div id="language" class="info-value">Loading...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Cookies Enabled:</div>
+            <div id="cookies" class="info-value">Loading...</div>
+        </div>
+    </div>
+
+    <div class="info-section">
+        <h2>Performance Data</h2>
+        <div class="info-row">
+            <div class="info-label">Page Load Time:</div>
+            <div id="load-time" class="info-value">Calculating...</div>
+        </div>
+        <div class="info-row">
+            <div class="info-label">Network Latency:</div>
+            <div id="latency" class="info-value">Measuring...</div>
+        </div>
+    </div>
+
+    <div class="info-section">
+        <h2>HTTP Headers</h2>
+        <div id="headers-container">Loading headers...</div>
+    </div>
+
+    <script>
+        const startTime = performance.now();
+        
+        // Basic information collection
+        document.getElementById('protocol').textContent = window.location.protocol.replace(':', '');
+        document.getElementById('user-agent').textContent = navigator.userAgent;
+        document.getElementById('screen-resolution').textContent = \`\${screen.width}x\${screen.height}\`;
+        document.getElementById('window-size').textContent = \`\${window.innerWidth}x\${window.innerHeight}\`;
+        document.getElementById('color-depth').textContent = \`\${screen.colorDepth} bits\`;
+        document.getElementById('timezone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
+        document.getElementById('language').textContent = navigator.language || navigator.userLanguage;
+        document.getElementById('cookies').textContent = navigator.cookieEnabled ? 'Enabled' : 'Disabled';
+
+        // Detect browser
+        function detectBrowser() {
+            const userAgent = navigator.userAgent;
+            let browserName;
+            
+            if (userAgent.match(/chrome|chromium|crios/i)) {
+                browserName = "Chrome";
+            } else if (userAgent.match(/firefox|fxios/i)) {
+                browserName = "Firefox";
+            } else if (userAgent.match(/safari/i)) {
+                browserName = "Safari";
+            } else if (userAgent.match(/opr\//i)) {
+                browserName = "Opera";
+            } else if (userAgent.match(/edg/i)) {
+                browserName = "Edge";
+            } else if (userAgent.match(/msie|trident/i)) {
+                browserName = "Internet Explorer";
+            } else {
+                browserName = "Unknown";
+            }
+            
+            return browserName;
+        }
+
+        // Detect OS
+        function detectOS() {
+            const userAgent = navigator.userAgent;
+            let os = "Unknown";
+            
+            if (userAgent.indexOf("Win") != -1) os = "Windows";
+            if (userAgent.indexOf("Mac") != -1) os = "MacOS";
+            if (userAgent.indexOf("Linux") != -1) os = "Linux";
+            if (userAgent.indexOf("Android") != -1) os = "Android";
+            if (userAgent.indexOf("like Mac") != -1) os = "iOS";
+            
+            return os;
+        }
+
+        document.getElementById('browser').textContent = detectBrowser();
+        document.getElementById('os').textContent = detectOS();
+
+        // Fetch connection info and headers
+        fetch('/remote-info', {
+            method: 'GET',
+            credentials: 'same-origin'
+        })
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('ip-address').textContent = data.ip || 'Not available';
+            document.getElementById('cdn-server').textContent = data.server || 'Origin Server';
+            
+            // Display all headers
+            const headersContainer = document.getElementById('headers-container');
+            headersContainer.innerHTML = '';
+            
+            if (data.headers && Object.keys(data.headers).length > 0) {
+                Object.entries(data.headers).forEach(([key, value]) => {
+                    const row = document.createElement('div');
+                    row.className = 'info-row';
+                    
+                    const label = document.createElement('div');
+                    label.className = 'info-label';
+                    label.textContent = key;
+                    
+                    const val = document.createElement('div');
+                    val.className = 'info-value';
+                    val.textContent = value;
+                    
+                    row.appendChild(label);
+                    row.appendChild(val);
+                    headersContainer.appendChild(row);
+                });
+            } else {
+                headersContainer.textContent = 'No header information available';
+            }
+        })
+        .catch(error => {
+            document.getElementById('ip-address').textContent = 'Error: Could not fetch client information';
+            document.getElementById('headers-container').innerHTML = \`<div class="error">Error fetching headers: \${error.message}</div>\`;
+        });
+
+        // Network information
+        if ('connection' in navigator) {
+            const connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+            if (connection) {
+                document.getElementById('connection-type').textContent = connection.effectiveType || 'Unknown';
+            }
+        } else {
+            document.getElementById('connection-type').textContent = 'API not supported';
+        }
+
+        // Measure page load time
+        window.addEventListener('load', () => {
+            const loadTime = performance.now() - startTime;
+            document.getElementById('load-time').textContent = \`\${loadTime.toFixed(2)} ms\`;
+            
+            // Measure latency with a small ping request
+            const pingStart = performance.now();
+            fetch('/remote.html?ping=' + new Date().getTime(), { method: 'HEAD' })
+                .then(() => {
+                    const pingTime = performance.now() - pingStart;
+                    document.getElementById('latency').textContent = \`\${pingTime.toFixed(2)} ms\`;
+                })
+                .catch(() => {
+                    document.getElementById('latency').textContent = 'Failed to measure';
+                });
+        });
     </script>
 </body>
 </html>
