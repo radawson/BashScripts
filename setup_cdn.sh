@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.0.0
+#v1.1.0
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
@@ -355,6 +355,9 @@ if [ -z "${PRIVATE_KEY}" ]; then
 fi
 WG_IP="10.10.0.${CDN_NUMBER}/24"
 
+# Create directory for origin server certificates
+sudo mkdir -p /etc/ssl/private/origin.${DOMAIN}
+
 echo "Creating WireGuard configuration file"
 sudo tee "${WG_CONFIG}" > /dev/null <<EOF
 [Interface]
@@ -362,20 +365,92 @@ PrivateKey = ${PRIVATE_KEY}
 Address = ${WG_IP}
 ListenPort = 51822
 SaveConfig = true
+# Additional security parameters
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+# MTU settings for optimal performance
+MTU = 1420
 
 [Peer]
-PublicKey = PrYukBiT8wIxbUNLswyrBSCdoAhJOjIejhccFDzBxXI=
-Endpoint = origin.techopsgroup.com:51822
+# Note: Replace this with the actual origin server public key
+PublicKey = <ORIGIN_PUBLIC_KEY>
+Endpoint = origin.${DOMAIN}:51822
 AllowedIPs = 10.10.0.0/24
 PersistentKeepalive = 25
 EOF
 
-# Enable WireGuard
-sudo systemctl enable wg-quick@wg0
+# Create a script to update WireGuard configuration with origin server key
+sudo tee /usr/local/bin/update-wireguard-config >/dev/null <<EOF
+#!/bin/bash
+# Script to update WireGuard configuration with origin server key
+
+if [[ \$# -ne 1 ]]; then
+    echo "Usage: \$0 <ORIGIN_PUBLIC_KEY>"
+    exit 1
+fi
+
+ORIGIN_KEY=\$1
+
+# Update the WireGuard configuration
+sudo sed -i "s/<ORIGIN_PUBLIC_KEY>/\${ORIGIN_KEY}/" /etc/wireguard/wg0.conf
+
+# Restart WireGuard to apply changes
+sudo wg-quick down wg0
 sudo wg-quick up wg0
 
+echo "WireGuard configuration updated with origin server key"
+EOF
+
+sudo chmod +x /usr/local/bin/update-wireguard-config
+
+# Create a script to pull and configure SSL certificates from origin server
+sudo tee /usr/local/bin/pull-ssl-certs >/dev/null <<EOF
+#!/bin/bash
+# Script to pull SSL certificates from origin server
+
+# Origin server WireGuard IP
+ORIGIN="10.10.0.1"
+ORIGIN_DOMAIN="origin.${DOMAIN}"
+
+# Source and destination paths
+CERT_SOURCE="/etc/letsencrypt/live/\${ORIGIN_DOMAIN}/fullchain.pem"
+KEY_SOURCE="/etc/letsencrypt/live/\${ORIGIN_DOMAIN}/privkey.pem"
+CERT_DEST="/etc/ssl/private/\${ORIGIN_DOMAIN}/fullchain.pem"
+KEY_DEST="/etc/ssl/private/\${ORIGIN_DOMAIN}/privkey.pem"
+
+# Create destination directory if it doesn't exist
+sudo mkdir -p /etc/ssl/private/\${ORIGIN_DOMAIN}
+
+# Pull certificates using rsync
+rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${CERT_SOURCE} \${CERT_DEST}
+rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${KEY_SOURCE} \${KEY_DEST}
+
+# Set proper permissions
+sudo chmod 644 \${CERT_DEST}
+sudo chmod 600 \${KEY_DEST}
+sudo chown root:root \${CERT_DEST} \${KEY_DEST}
+
+# Update NGINX configuration to use the new certificates
+sudo sed -i "s|ssl_certificate.*|ssl_certificate \${CERT_DEST};|" /etc/nginx/sites-available/${FQDN}
+sudo sed -i "s|ssl_certificate_key.*|ssl_certificate_key \${KEY_DEST};|" /etc/nginx/sites-available/${FQDN}
+
+# Test NGINX configuration
+sudo nginx -t
+
+if [ \$? -eq 0 ]; then
+    # Reload NGINX if configuration is valid
+    sudo systemctl reload nginx
+    echo "SSL certificates updated and NGINX reloaded successfully"
+else
+    echo "Error: NGINX configuration test failed"
+    exit 1
+fi
+EOF
+
+sudo chmod +x /usr/local/bin/pull-ssl-certs
+
 # Create the pull script
-sudo tee /usr/local/bin/pull-geozones.sh > /dev/null <<EOF
+sudo tee /usr/local/bin/pull-geozones.sh >/dev/null <<EOF
 #!/bin/bash
 # Script to pull geo-zones.yaml from origin server
 
@@ -399,10 +474,10 @@ if [ \$? -eq 0 ]; then
   echo "\$(date): Successfully pulled geo-zones.yaml" >> \$LOG_FILE
 
   if yamllint ${TEMP_FILE} 2>&1 | grep -q "error"; then
-    echo "\$(date): "Warning: YAML file has errors. Please check manually." >> \$LOG_FILE
+    echo "\$(date): Warning: YAML file has errors. Please check manually." >> \$LOG_FILE
     exit 1
   else
-    echo "\$(date): "YAML validation passed." >> \$LOG_FILE
+    echo "\$(date): YAML validation passed." >> \$LOG_FILE
   fi
 
   # Move the temp file to the destination
@@ -449,13 +524,16 @@ else
 fi
 
 # Create the cron job file directly
-sudo tee /etc/cron.d/geozones-pull > /dev/null <<EOF
+sudo tee /etc/cron.d/cdn-maintenance >/dev/null <<EOF
 # Pull geo-zones.yaml from origin server hourly
 0 * * * * root /usr/local/bin/pull-geozones.sh
+
+# Pull SSL certificates daily at 3 AM
+0 3 * * * root /usr/local/bin/pull-ssl-certs
 EOF
 
 # Set proper permissions on cron file
-sudo chmod 644 /etc/cron.d/geozones-pull
+sudo chmod 644 /etc/cron.d/cdn-maintenance
 
 # Create log file with proper permissions
 sudo touch /var/log/cdn-pull.log
@@ -479,16 +557,24 @@ PowerDNS Database:
     Database Password: ${DB_PASSWORD}
 
 Certificate Path: /etc/letsencrypt/live/${FQDN}/
+Origin Server Certificate Path: /etc/ssl/private/origin.${DOMAIN}/
 
 Configuration Files:
     PowerDNS: /etc/powerdns/pdns.conf
     GeoIP Zones: /etc/powerdns/geo-zones.yaml
     NGINX: /etc/nginx/sites-available/${FQDN}
     WireGuard: /etc/wireguard/wg0.conf
+
+Management Scripts:
+    Update WireGuard Config: /usr/local/bin/update-wireguard-config <ORIGIN_PUBLIC_KEY>
+    Pull SSL Certificates: /usr/local/bin/pull-ssl-certs
+    Pull GeoIP Zones: /usr/local/bin/pull-geozones.sh
 EOF
 
 echo "CDN server setup complete!"
 echo "Next steps:"
 echo "1. Copy the SSH public key to the origin server"
 echo "2. Copy the WireGuard public key to the origin server"
-echo "3. Update the GeoIP zones file at /etc/powerdns/geo-zones.yaml"
+echo "3. Run: /usr/local/bin/update-wireguard-config <ORIGIN_PUBLIC_KEY>"
+echo "4. Run: /usr/local/bin/pull-ssl-certs"
+echo "5. Run: /usr/local/bin/pull-geozones.sh"

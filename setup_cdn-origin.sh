@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.1.0
+#v1.1.1
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
@@ -66,6 +66,19 @@ sudo ufw allow 80/tcp    # HTTP
 sudo ufw allow 443/tcp   # HTTPS
 sudo ufw allow 51822/udp # WireGuard
 sudo ufw --force enable
+
+# Set up SSH Keys
+echo "Setting up SSH keys"
+sudo mkdir -p /root/.ssh
+touch gitlab.key
+sudo chmod 600 gitlab.key
+sudo cat <<EOF > /root/.ssh/config
+Host gitlab
+  HostName gitlab.techopsgroup.com
+  User git
+  IdentityFile ~/.ssh/gitlab.key
+EOF
+
 
 ## Repository Preparation
 # Ensure support for apt repositories served via HTTPS
@@ -1567,11 +1580,19 @@ PrivateKey = ${PRIVATE_KEY}
 Address = 10.10.0.1/24
 ListenPort = 51822
 SaveConfig = false
+# Additional security parameters
+PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+# MTU settings for optimal performance
+MTU = 1420
+# Keep alive settings
+PersistentKeepalive = 25
 
 # CDN nodes will be added here with:
 # [Peer]
 # PublicKey = <cdn_node_public_key>
 # AllowedIPs = 10.10.0.X/32
+# PersistentKeepalive = 25
 EOF
 
 # Create script to add new CDN nodes
@@ -1737,13 +1758,39 @@ sudo sed -i "s/        \$CONTINENT:\\n          - content: 10.10.0.[0-9]\\+/    
 echo "Updated \$REGION and \$CONTINENT to point to CDN node \$NODE_NUMBER (10.10.0.\$NODE_NUMBER)"
 EOF
 
-sudo chmod +x /usr/local/bin/add-cdn-node
-sudo chmod +x /usr/local/bin/list-cdn-nodes
 sudo chmod +x /usr/local/bin/update-geo-regions
 
 # Setup SSH for Edge Node Pulls
 echo "Setting up SSH for edge node pulls"
 sudo -u root ssh-keygen -f /root/.ssh/id_ed25519 -N "" -t ed25519
+
+# Create a script to distribute SSL certificates to edge nodes
+sudo tee /usr/local/bin/distribute-cert >/dev/null <<EOF
+#!/bin/bash
+# Script to distribute SSL certificates to edge nodes
+
+if [[ \$# -ne 2 ]]; then
+    echo "Usage: \$0 <NODE_NUMBER> <NODE_IP>"
+    exit 1
+fi
+
+NODE_NUMBER=\$1
+NODE_IP=\$2
+
+# Create certificate directory on edge node
+ssh -i /root/.ssh/id_ed25519 root@\${NODE_IP} "mkdir -p /etc/ssl/private/${FQDN}"
+
+# Copy certificate files
+scp -i /root/.ssh/id_ed25519 /etc/letsencrypt/live/${FQDN}/fullchain.pem root@\${NODE_IP}:/etc/ssl/private/${FQDN}/
+scp -i /root/.ssh/id_ed25519 /etc/letsencrypt/live/${FQDN}/privkey.pem root@\${NODE_IP}:/etc/ssl/private/${FQDN}/
+
+# Set proper permissions
+ssh -i /root/.ssh/id_ed25519 root@\${NODE_IP} "chmod 600 /etc/ssl/private/${FQDN}/*"
+
+echo "SSL certificates distributed to node \${NODE_NUMBER} (\${NODE_IP})"
+EOF
+
+sudo chmod +x /usr/local/bin/distribute-cert
 
 # Enable and start WireGuard
 echo "Enabling WireGuard"
@@ -1759,7 +1806,7 @@ FQDN: ${FQDN}
 IP Address: ${IP}
 WireGuard Public Key: ${PUBLIC_KEY}
 WireGuard Endpoint: ${IP}:51822
-Admmin password: ${ADMIN_PASS}
+Admin password: ${ADMIN_PASSWORD}
 
 Configuration Files:
     NGINX: /etc/nginx/sites-available/${FQDN}
@@ -1771,6 +1818,13 @@ Management Scripts:
     Add CDN Node: /usr/local/bin/add-cdn-node <NODE_NUMBER> <NODE_PUBLIC_KEY>
     List CDN Nodes: /usr/local/bin/list-cdn-nodes
     Update Region: /usr/local/bin/update-geo-regions <NODE_NUMBER> <REGION> <CONTINENT>
+    Distribute Cert: /usr/local/bin/distribute-cert <NODE_NUMBER> <NODE_IP>
+
+SSL Certificate Information:
+    Certificate Path: /etc/letsencrypt/live/${FQDN}/fullchain.pem
+    Private Key Path: /etc/letsencrypt/live/${FQDN}/privkey.pem
+    Self-signed Certificate Path: /etc/ssl/private/${FQDN}/fullchain.pem
+    Self-signed Private Key Path: /etc/ssl/private/${FQDN}/privkey.pem
 EOF
 
 echo "CDN origin server setup complete!"
