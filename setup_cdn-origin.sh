@@ -10,20 +10,20 @@ fi
 
 # Function to wait for apt locks to be released
 wait_for_apt() {
-  echo "Checking for apt/dpkg locks:"
-  while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-    printf "Waiting for other apt/dpkg processes to complete..."
-    sleep 5
-    printf "."
-  done
-  echo -e "\n\nLocks released, proceeding with installation."
+    echo "Checking for apt/dpkg locks:"
+    while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+        printf "Waiting for other apt/dpkg processes to complete..."
+        sleep 5
+        printf "."
+    done
+    echo -e "\n\nLocks released, proceeding with installation."
 }
 
 # Set variables
 DOMAIN=${1}
 if [[ ! "${DOMAIN}" =~ ^[a-zA-Z0-9.-]+$ ]]; then
-  echo "Error: Invalid domain name format."
-  exit 1
+    echo "Error: Invalid domain name format."
+    exit 1
 fi
 
 # Set IP address
@@ -86,17 +86,8 @@ sudo apt-get -y install nginx
 sudo systemctl stop nginx
 
 # Install Node.js and npm
-echo "Installing Node.js and npm"
-wait_for_apt
-
-# Download and install nvm:
-curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.2/install.sh | bash
-
-# in lieu of restarting the shell
-\. "$HOME/.nvm/nvm.sh"
-
-# Download and install Node.js:
-nvm install 22
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt-get install -y nodejs
 
 # Install WireGuard
 echo "Installing WireGuard"
@@ -117,10 +108,6 @@ sudo chown -R www-data:www-data /var/www/content
 # Create the admin interface files directory
 sudo mkdir -p /var/www/admin
 
-# Install Node.js and npm
-sudo apt-get update
-sudo apt-get install -y nodejs npm
-
 # Create the application directory
 sudo mkdir -p /var/www/admin
 cd /var/www/admin
@@ -132,7 +119,7 @@ sudo npm init -y
 sudo npm install express express-fileupload morgan cors helmet multer bcrypt jsonwebtoken dotenv
 
 # Create the admin application
-sudo tee /var/www/admin/app.js > /dev/null << 'EOF'
+sudo tee /var/www/admin/app.js >/dev/null <<'EOF'
 const express = require('express');
 const fileUpload = require('express-fileupload');
 const path = require('path');
@@ -229,7 +216,7 @@ app.post('/api/upload', (req, res) => {
       fs.mkdirSync(fullPath, { recursive: true });
     }
     
-    let uploadedFiles = req.files.files;
+    let uploadedFiles = req.files.files || (req.files['files[]'] ? req.files['files[]'] : null);
     if (!Array.isArray(uploadedFiles)) {
       uploadedFiles = [uploadedFiles];
     }
@@ -421,7 +408,7 @@ EOF
 
 # Create basic auth middleware
 sudo mkdir -p /var/www/admin/middleware
-sudo tee /var/www/admin/middleware/basicAuth.js > /dev/null << 'EOF'
+sudo tee /var/www/admin/middleware/basicAuth.js >/dev/null <<'EOF'
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
@@ -489,7 +476,7 @@ EOF
 
 # Create the frontend files
 sudo mkdir -p /var/www/admin/public
-sudo tee /var/www/admin/public/index.html > /dev/null << 'EOF'
+sudo tee /var/www/admin/public/index.html >/dev/null <<'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -607,7 +594,7 @@ sudo tee /var/www/admin/public/index.html > /dev/null << 'EOF'
 EOF
 
 # Create the CSS file
-sudo tee /var/www/admin/public/styles.css > /dev/null << 'EOF'
+sudo tee /var/www/admin/public/styles.css >/dev/null <<'EOF'
 body {
     padding-top: 20px;
     padding-bottom: 40px;
@@ -650,7 +637,7 @@ body {
 EOF
 
 # Create the JavaScript file
-sudo tee /var/www/admin/public/app.js > /dev/null << 'EOF'
+sudo tee /var/www/admin/public/app.js >/dev/null <<'EOF'
 // Global variables
 let currentPath = '/';
 let selectedFile = null;
@@ -1050,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
 EOF
 
 # Create a systemd service file
-sudo tee /etc/systemd/system/cdn-admin.service > /dev/null << EOF
+sudo tee /etc/systemd/system/cdn-admin.service >/dev/null <<EOF
 [Unit]
 Description=CDN Admin Panel
 After=network.target
@@ -1074,25 +1061,6 @@ sudo mkdir -p /var/www/admin/config
 # Set correct permissions
 sudo chown -R www-data:www-data /var/www/admin
 
-# Update Nginx configuration for the admin interface
-sudo tee -a /etc/nginx/sites-available/${FQDN} > /dev/null << EOF
-
-    # Admin area with Node.js backend
-    location /admin {
-        auth_basic "Restricted Admin Area";
-        auth_basic_user_file /etc/nginx/.htpasswd;
-        proxy_pass http://localhost:3000/;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-EOF
-
 # Create htpasswd file for admin area
 sudo apt-get install -y apache2-utils
 sudo htpasswd -c /etc/nginx/.htpasswd admin
@@ -1104,11 +1072,11 @@ sudo systemctl start cdn-admin
 # Try to get SSL certificate
 echo "Attempting to obtain SSL certificate for ${FQDN}"
 sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@${DOMAIN} \
-  -d ${FQDN} --preferred-challenges http-01
+    -d ${FQDN} --preferred-challenges http-01
 
 # Enhance NGINX config for fast transfers
 echo "Creating enhanced NGINX configuration for fast transfers"
-sudo tee -a /etc/nginx/conf.d/file-transfer-optimizations.conf > /dev/null << 'EOF'
+sudo tee -a /etc/nginx/conf.d/file-transfer-optimizations.conf >/dev/null <<'EOF'
 # Optimizations for large file transfers
 sendfile on;
 tcp_nopush on;
@@ -1132,9 +1100,8 @@ EOF
 
 # Configure NGINX regardless of certificate success
 echo "Creating NGINX configuration for ${FQDN}"
-if sudo test -f /etc/letsencrypt/live/${FQDN}/fullchain.pem; then
-    # SSL configuration
-    sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF 
+# SSL configuration
+sudo tee /etc/nginx/sites-available/${FQDN} >/dev/null <<EOF
 server {
     listen 80 default_server;
     server_name ${FQDN};
@@ -1150,8 +1117,8 @@ server {
     listen 443 ssl http2 default_server;
     server_name ${FQDN};
 
-    ssl_certificate /etc/letsencrypt/live/${FQDN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${FQDN}/privkey.pem;
+    ssl_certificate <cert-path>;
+    ssl_certificate_key <key-path>;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers 'HIGH:!aNULL:!MD5';
@@ -1168,18 +1135,28 @@ server {
         add_header Cache-Control "public, max-age=3600";
     }
 
+    # Admin area with Node.js backend
+    location /admin {
+        auth_basic "Restricted Admin Area";
+        auth_basic_user_file /etc/nginx/.htpasswd;
+        proxy_pass http://localhost:3000/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_cache_bypass $http_upgrade;
+    }
+
     # For testing purposes, return client information as JSON
     location = /remote-info {
         default_type application/json;
-        
-        # Create JSON with client information
+        # JSON with client information
         return 200 '{"ip": "$remote_addr", "server": "$hostname", "headers": {"User-Agent": "$http_user_agent", "Accept-Language": "$http_accept_language", "Host": "$host", "Referer": "$http_referer", "X-Forwarded-For": "$http_x_forwarded_for", "X-Real-IP": "$http_x_real_ip", "Via": "$http_via", "X-Cache-Status": "$upstream_cache_status"}}';
     }
 
-    location ~ /\.well-known/acme-challenge {
-        allow all;
-    }
-    
     # Static content with longer cache times
     location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
         root /var/www/content;
@@ -1189,37 +1166,61 @@ server {
     }
 }
 EOF
+
+# Check for Let's Encrypt certificates and configure accordingly
+echo "Updating certificate paths in NGINX configuration"
+if test -f "/etc/letsencrypt/live/${FQDN}/fullchain.pem"; then
+    echo "SSL certificate obtained from Let's Encrypt."
+    sudo sed -i "s|<cert-path>;|/etc/letsencrypt/live/${FQDN}/fullchain.pem;|g" /etc/nginx/sites-available/${FQDN}
+    sudo sed -i "s|<key-path>;|/etc/letsencrypt/live/${FQDN}/privkey.pem;|g" /etc/nginx/sites-available/${FQDN}
 else
-    # HTTP-only configuration (no SSL)
-    echo "Warning: SSL certificate not available. Creating HTTP-only configuration."
-    sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF 
-server {
-    listen 80 default_server;
-    server_name ${FQDN};
-    
-    # Origin server configuration
-    location / {
-        root /var/www/content;
-        index index.html index.htm;
-        
-        # Cache headers
-        add_header X-Origin-Server "true";
-        add_header Cache-Control "public, max-age=3600";
-    }
-    
-    location ~ /\.well-known/acme-challenge {
-        allow all;
-    }
-    
-    # Static content with longer cache times
-    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
-        root /var/www/content;
-        expires 7d;
-        add_header Cache-Control "public, max-age=604800";
-        access_log off;
-    }
-}
+    echo "Failed to obtain SSL certificate. Generating self-signed certificate."
+
+    # Create a directory for our self-signed certs if it doesn't exist
+    sudo mkdir -p /etc/ssl/private/${FQDN}
+
+    # Create a temporary OpenSSL configuration file with SAN
+    cat >/tmp/openssl.cnf <<EOF
+[req]
+default_bits = 2048
+prompt = no
+default_md = sha256
+distinguished_name = dn
+x509_extensions = v3_ext
+
+[dn]
+CN = ${FQDN}
+O = CDN Self-Signed
+C = US
+
+[v3_ext]
+subjectAltName = @alt_names
+keyUsage = digitalSignature, keyEncipherment
+extendedKeyUsage = serverAuth
+
+[alt_names]
+DNS.1 = ${FQDN}
+IP.1 = 10.10.0.1
+IP.2 = ${IP}
 EOF
+
+    # Generate a self-signed certificate with SAN using the config file
+    sudo openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+        -keyout /etc/ssl/private/${FQDN}/privkey.pem \
+        -out /etc/ssl/private/${FQDN}/fullchain.pem \
+        -config /tmp/openssl.cnf
+
+    # Set appropriate permissions
+    sudo chmod 600 /etc/ssl/private/${FQDN}/privkey.pem
+
+    # Clean up the temporary file
+    rm /tmp/openssl.cnf
+
+    # Update NGINX to use the self-signed certificate
+    sudo sed -i "s|<cert-path>;|/etc/ssl/private/${FQDN}/fullchain.pem;|g" /etc/nginx/sites-available/${FQDN}
+    sudo sed -i "s|<key-path>;|/etc/ssl/private/${FQDN}/privkey.pem;|g" /etc/nginx/sites-available/${FQDN}
+
+    echo "Self-signed certificate created and configured."
 fi
 
 # Enable the site and disable default
@@ -1227,7 +1228,7 @@ sudo ln -sf /etc/nginx/sites-available/${FQDN} /etc/nginx/sites-enabled/
 sudo rm -f /etc/nginx/sites-enabled/default
 
 # Create sample content
-sudo tee /var/www/content/index.html > /dev/null <<EOF
+sudo tee /var/www/content/index.html >/dev/null <<EOF
 <!DOCTYPE html>
 <html>
 <head>
@@ -1255,7 +1256,7 @@ sudo tee /var/www/content/index.html > /dev/null <<EOF
 EOF
 
 # Create a remote.html file in the content directory
-sudo tee /var/www/content/remote.html > /dev/null << 'EOF'
+sudo tee /var/www/content/remote.html >/dev/null <<'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1548,7 +1549,7 @@ if [ -z "${PRIVATE_KEY}" ]; then
 fi
 
 echo "Creating WireGuard server configuration file"
-sudo tee "${WG_CONFIG}" > /dev/null <<EOF
+sudo tee "${WG_CONFIG}" >/dev/null <<EOF
 [Interface]
 PrivateKey = ${PRIVATE_KEY}
 Address = 10.10.0.1/24
@@ -1563,7 +1564,7 @@ EOF
 
 # Create script to add new CDN nodes
 echo "Creating CDN node management scripts"
-sudo tee /usr/local/bin/add-cdn-node > /dev/null <<EOF
+sudo tee /usr/local/bin/add-cdn-node >/dev/null <<EOF
 #!/bin/bash
 # Script to add a new CDN edge node to the WireGuard configuration
 
@@ -1613,7 +1614,7 @@ echo "CDN node \${NODE_NUMBER} added successfully."
 echo "IP: 10.10.0.\${NODE_NUMBER}"
 EOF
 
-sudo tee /usr/local/bin/list-cdn-nodes > /dev/null <<EOF
+sudo tee /usr/local/bin/list-cdn-nodes >/dev/null <<EOF
 #!/bin/bash
 # Script to list all CDN edge nodes
 
@@ -1641,11 +1642,10 @@ EOF
 sudo chmod +x /usr/local/bin/add-cdn-node
 sudo chmod +x /usr/local/bin/list-cdn-nodes
 
-
 # Create the GeoIP configuration directory and base configuration file
 echo "Creating GeoIP configuration"
 sudo mkdir -p /etc/powerdns
-sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
+sudo tee /etc/powerdns/geo-zones.yaml >/dev/null <<EOF
 ---
 # GeoIP Configuration for ${DOMAIN} CDN
 zones:
@@ -1704,7 +1704,7 @@ EOF
 sudo chmod 644 /etc/powerdns/geo-zones.yaml
 
 # Create a script to update the geo configuration with regional assignments
-sudo tee /usr/local/bin/update-geo-regions > /dev/null <<EOF
+sudo tee /usr/local/bin/update-geo-regions >/dev/null <<EOF
 #!/bin/bash
 # Script to update regional assignments in the GeoIP configuration
 
@@ -1732,7 +1732,6 @@ sudo chmod +x /usr/local/bin/update-geo-regions
 # Setup SSH for Edge Node Pulls
 echo "Setting up SSH for edge node pulls"
 sudo -u root ssh-keygen -f /root/.ssh/id_ed25519 -N "" -t ed25519
-
 
 # Enable and start WireGuard
 echo "Enabling WireGuard"

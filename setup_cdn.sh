@@ -298,7 +298,7 @@ server {
     
     # Static content caching
     location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
-        proxy_pass http://10.10.0.1;
+        proxy_pass https://10.10.0.1;
         proxy_cache cdn_cache;
         proxy_cache_valid 200 302 7d;
         expires 30d;
