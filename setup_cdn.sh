@@ -163,7 +163,7 @@ sudo tee /etc/powerdns/pdns.conf > /dev/null <<EOF
 # Basic settings
 setuid=pdns
 setgid=pdns
-launch=gpgsql
+#launch=gpgsql
 
 # Network settings for PowerDNS
 local-address=${IP},${CDN_IP}
@@ -185,24 +185,39 @@ geoip-zones-file=/etc/powerdns/geo-zones.yaml
 allow-axfr-ips=10.10.0.1
 EOF
 
-# Create empty geo-zones file (to be configured later)
+# Create a comprehensive geo-zones.yaml file 
 sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
-# GeoIP Configuration
-# Example:
-# zones:
-#   cdn.example.com:
-#     - domain: cdn.example.com
-#       ttl: 300
-#       records:
-#         usa:
-#           - content: 203.0.113.1
-#             type: A
-#         europe: 
-#           - content: 203.0.113.2
-#             type: A
-#         asia:
-#           - content: 203.0.113.3
-#             type: A
+# GeoIP Configuration for Technical Operations Group CDN
+zones:
+  cdn.techopsgroup.com:
+    - domain: cdn.techopsgroup.com
+      ttl: 300
+      records:
+        origin.techopsgroup.com:
+          - content: 149.154.27.178
+            type: A
+        cdn002.techopsgroup.com:
+          - content: 10.10.0.2
+            type: A
+        cdn003.techopsgroup.com:
+          - content: 10.10.0.3
+            type: A
+        # Geographic assignments - adjust for your actual CDN nodes
+        us-east:
+          - content: 10.10.0.2  # This CDN node will serve US East
+            type: A
+        us-west:
+          - content: 10.10.0.3  # Another CDN node will serve US West
+            type: A
+        default:
+          - content: 149.154.27.178  # Origin will be default fallback
+            type: A
+    services:
+      # Use geographic routing for all cdn.techopsgroup.com subdomains
+      "*.cdn.techopsgroup.com": 
+        - "%co.cdn.techopsgroup.com"  # Match by country first
+        - "%cn.cdn.techopsgroup.com"  # Try continent match next
+        - "default.cdn.techopsgroup.com"  # Default fallback
 EOF
 
 # Restart PowerDNS to apply configuration
@@ -225,13 +240,14 @@ if [ ! -f /etc/letsencrypt/live/${FQDN}/fullchain.pem ]; then
 else
     echo "Certificate generated successfully!"
 fi
-# First, create a cache config file
+
+# Create a cache config file
 sudo tee /etc/nginx/conf.d/proxy-cache.conf > /dev/null <<EOF
 proxy_cache_path /var/cache/nginx/cdn_cache levels=1:2 keys_zone=cdn_cache:10m max_size=10g inactive=60m;
 proxy_temp_path /var/cache/nginx/cdn_temp;
 EOF
 
-# Now create the site configuration without the proxy_cache_path directive in the server block
+# Create the site configuration without the proxy_cache_path directive in the server block
 sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF
 server {
     listen 80;
@@ -258,7 +274,7 @@ server {
     
     # Add cache headers
     add_header X-Cache-Status \$upstream_cache_status;
-    add_header X-CDN-Node "cdn002.techopsgroup.com";
+    add_header X-CDN-Node "${FQDN}";
     
     # Root web content
     location / {
@@ -268,6 +284,11 @@ server {
       proxy_cache_valid 404 5m;
       proxy_set_header Host \$host;
       proxy_set_header X-Real-IP \$remote_addr;
+      
+      # Increase timeouts
+      proxy_connect_timeout 60s;
+      proxy_send_timeout 60s;
+      proxy_read_timeout 60s;
     
       # Avoid redirect loops
       proxy_redirect off;
@@ -279,7 +300,7 @@ server {
     
     # Static content caching
     location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
-        proxy_pass https://10.10.0.1;
+        proxy_pass http://10.10.0.1;
         proxy_cache cdn_cache;
         proxy_cache_valid 200 302 7d;
         expires 30d;
@@ -355,6 +376,76 @@ EOF
 sudo systemctl enable wg-quick@wg0
 sudo wg-quick up wg0
 
+# Create the pull script
+sudo tee /usr/local/bin/pull-geozones.sh > /dev/null <<EOF
+#!/bin/bash
+# Script to pull geo-zones.yaml from origin server
+
+# Log file
+LOG_FILE="/var/log/cdn-pull.log"
+
+# Origin server WireGuard IP
+ORIGIN="10.10.0.1"
+
+# Source and destination files
+SOURCE_FILE="/etc/powerdns/geo-zones.yaml"
+DEST_FILE="/etc/powerdns/geo-zones.yaml"
+
+echo "\$(date): Starting geo-zones.yaml pull from \$ORIGIN" >> \$LOG_FILE
+
+# Pull the file using rsync
+rsync -av --rsync-path="sudo rsync" root@\$ORIGIN:\$SOURCE_FILE \$DEST_FILE
+
+if [ \$? -eq 0 ]; then
+  echo "\$(date): Successfully pulled geo-zones.yaml" >> \$LOG_FILE
+  
+  # Fix permissions
+  sudo chown pdns:pdns \$DEST_FILE
+  sudo chmod 644 \$DEST_FILE
+  
+  # Restart PowerDNS to apply changes
+  sudo systemctl restart pdns
+  
+  if [ \$? -eq 0 ]; then
+    echo "\$(date): Successfully restarted PowerDNS" >> \$LOG_FILE
+  else
+    echo "\$(date): Failed to restart PowerDNS" >> \$LOG_FILE
+  fi
+else
+  echo "\$(date): Failed to pull geo-zones.yaml from \$ORIGIN" >> \$LOG_FILE
+fi
+
+echo "\$(date): Pull operation completed" >> \$LOG_FILE
+EOF
+
+# Make the script executable
+sudo chmod +x /usr/local/bin/pull-geozones.sh
+
+# Set up SSH key for root user if it doesn't exist
+if [ ! -f /root/.ssh/id_ed25519 ]; then
+  sudo -u root ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
+  echo "SSH key generated. You need to copy this public key to the origin server:"
+  echo "--------------------------------------------------------"
+  sudo cat /root/.ssh/id_ed25519.pub
+  echo "--------------------------------------------------------"
+  echo "On the origin server, add this key to /root/.ssh/authorized_keys"
+else
+  echo "SSH key already exists at /root/.ssh/id_ed25519"
+fi
+
+# Create the cron job file directly
+sudo tee /etc/cron.d/geozones-pull > /dev/null <<EOF
+# Pull geo-zones.yaml from origin server hourly
+0 * * * * root /usr/local/bin/pull-geozones.sh
+EOF
+
+# Set proper permissions on cron file
+sudo chmod 644 /etc/cron.d/geozones-pull
+
+# Create log file with proper permissions
+sudo touch /var/log/cdn-pull.log
+sudo chmod 644 /var/log/cdn-pull.log
+
 ## Write Configuration to File
 # Save configuration data and WireGuard public key
 PUBLIC_KEY=$(cat /etc/wireguard/client_public.key)
@@ -364,6 +455,7 @@ cat <<EOF >~/cdn_server_config.txt
 FQDN: ${FQDN}
 IP Address: ${IP}
 WireGuard Public Key: ${PUBLIC_KEY}
+SSH Key: $(sudo cat /root/.ssh/id_ed25519.pub)
 
 PowerDNS Database:
     Database Type: PostgreSQL
