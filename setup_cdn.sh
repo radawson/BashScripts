@@ -57,11 +57,12 @@ if [[ -z "${IP}" ]]; then
     echo "Unable to determine IP address. Please provide it as the third argument."
     exit 1
 fi
+CDN_IP="10.10.0.${CDN_NUMBER}"
 
 FQDN="cdn${CDN_NUMBER_PADDED}.${DOMAIN}"
 
 echo "Setting up CDN server with FQDN ${FQDN} and IP ${IP}"
-echo "This server will use WireGuard IP 10.10.0.${CDN_NUMBER}"
+echo "This server will use WireGuard IP ${CDN_IP}"
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
@@ -115,6 +116,7 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 echo "Installing NGINX"
 wait_for_apt
 sudo apt-get -y install nginx
+sudo systemctl stop nginx
 
 # Install PostgreSQL
 echo "Installing PostgreSQL"
@@ -124,7 +126,7 @@ sudo apt-get -y install postgresql
 # Install PowerDNS
 echo "Installing PowerDNS and dependencies"
 wait_for_apt
-sudo apt-get -y install pdns-server pdns-backend-pgsql
+sudo apt-get -y install pdns-server pdns-backend-pgsql pdns-backend-geoip
 
 # Install tools for GeoIP database download
 echo "Installing curl and unzip for GeoIP database download"
@@ -146,8 +148,11 @@ sudo apt-get -y install wireguard wireguard-tools
 ## Software configuration
 # Configure PostgreSQL
 echo "Configuring PostgreSQL"
-sudo -u postgres psql -c "CREATE USER pdns WITH PASSWORD '${DB_PASSWORD}';"
-sudo -u postgres psql -c "CREATE DATABASE pdns OWNER pdns;"
+sudo -u postgres psql -c "CREATE USER pdns_user SUPERUSER WITH PASSWORD '${DB_PASSWORD}';"
+sudo -u postgres psql -c "CREATE DATABASE pdns OWNER pdns_user;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pdns_user;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pdns_user;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO pdns_user;"
 
 # Create PowerDNS schema
 sudo -u postgres psql pdns < /usr/share/doc/pdns-backend-pgsql/schema.pgsql.sql
@@ -159,21 +164,25 @@ sudo tee /etc/powerdns/pdns.conf > /dev/null <<EOF
 setuid=pdns
 setgid=pdns
 launch=gpgsql
-socket-dir=/var/run/pdns
+
+# Network settings for PowerDNS
+local-address=${IP},${CDN_IP}
+local-port=53
 
 # PostgreSQL backend settings
 gpgsql-host=localhost
-gpgsql-user=pdns
+gpgsql-user=pdns_user
 gpgsql-password=${DB_PASSWORD}
 gpgsql-dbname=pdns
+gpgsql-dnssec=yes
 
-# GeoIP settings
+# GeoIP backend - using correct settings for PowerDNS 4.8
+launch+=geoip
 geoip-database-files=/usr/share/GeoIP/GeoLite2-Country.mmdb
 geoip-zones-file=/etc/powerdns/geo-zones.yaml
 
 # Allow zone transfers from primary DNS
-# Replace with your internal DNS IP
-allow-axfr-ips=YOUR_INTERNAL_DNS_IP
+allow-axfr-ips=10.10.0.1
 EOF
 
 # Create empty geo-zones file (to be configured later)
@@ -206,16 +215,24 @@ sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@$
   -d ${FQDN} --preferred-challenges http-01
 
 # Configure NGINX with caching for CDN
+# Create Cache Directory
+sudo mkdir -p /var/cache/nginx/cdn_cache
+sudo chown -R www-data:www-data /var/cache/nginx/cdn_cache
+
+
 if [ ! -f /etc/letsencrypt/live/${FQDN}/fullchain.pem ]; then
     echo "Certificate generation failed!"
 else
-    # Create cache directories
-    sudo mkdir -p /var/cache/nginx/cdn_cache
-    sudo chown -R www-data:www-data /var/cache/nginx/cdn_cache
-    
-    # Create NGINX SSL configuration with caching
-    echo "Creating NGINX SSL configuration for ${FQDN}"
-    sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF 
+    echo "Certificate generated successfully!"
+fi
+# First, create a cache config file
+sudo tee /etc/nginx/conf.d/proxy-cache.conf > /dev/null <<EOF
+proxy_cache_path /var/cache/nginx/cdn_cache levels=1:2 keys_zone=cdn_cache:10m max_size=10g inactive=60m;
+proxy_temp_path /var/cache/nginx/cdn_temp;
+EOF
+
+# Now create the site configuration without the proxy_cache_path directive in the server block
+sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF
 server {
     listen 80;
     server_name ${FQDN};
@@ -238,19 +255,14 @@ server {
     ssl_ciphers 'HIGH:!aNULL:!MD5';
     ssl_prefer_server_ciphers on;
     ssl_session_cache shared:SSL:10m;
-
-    # CDN Cache configuration
-    proxy_cache_path /var/cache/nginx/cdn_cache levels=1:2 keys_zone=cdn_cache:10m max_size=10g inactive=60m;
-    proxy_temp_path /var/cache/nginx/cdn_temp;
-    proxy_cache_key "\$scheme\$request_method\$host\$request_uri";
     
     # Add cache headers
     add_header X-Cache-Status \$upstream_cache_status;
-    add_header X-CDN-Node "${FQDN}";
+    add_header X-CDN-Node "cdn002.techopsgroup.com";
     
     # Root web content
     location / {
-      proxy_pass https://10.10.0.1;  # WireGuard IP of origin server
+      proxy_pass http://10.10.0.1;
       proxy_cache cdn_cache;
       proxy_cache_valid 200 302 60m;
       proxy_cache_valid 404 5m;
@@ -265,7 +277,7 @@ server {
         allow all;
     }
     
-    # Static content caching (adjust paths as needed)
+    # Static content caching
     location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
         proxy_pass https://10.10.0.1;
         proxy_cache cdn_cache;
@@ -277,9 +289,10 @@ server {
 }
 EOF
 
-    # Enable the site
-    sudo ln -sf /etc/nginx/sites-available/${FQDN} /etc/nginx/sites-enabled/
-fi
+sudo mkdir -p /var/cache/nginx/cdn_cache /var/cache/nginx/cdn_temp
+sudo chown -R www-data:www-data /var/cache/nginx/cdn_cache /var/cache/nginx/cdn_temp
+sudo ln -sf /etc/nginx/sites-available/${FQDN} /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
 
 # Create basic index.html
 sudo mkdir -p /var/www/html
@@ -302,7 +315,7 @@ EOF
 
 # Restart NGINX to apply the new configuration
 echo "Restarting NGINX"
-sudo systemctl restart nginx
+sudo systemctl start nginx
 
 # Configure WireGuard
 echo "Configuring WireGuard"
@@ -332,7 +345,7 @@ ListenPort = 51822
 SaveConfig = true
 
 [Peer]
-PublicKey = <server_public_key>
+PublicKey = 4VpZ/s+iJcsGb60WYlOClOxMujdyVHbYYopYimxYTxc=
 Endpoint = origin.techopsgroup.com:51822
 AllowedIPs = 10.10.0.0/24
 PersistentKeepalive = 25
@@ -340,7 +353,7 @@ EOF
 
 # Enable WireGuard
 sudo systemctl enable wg-quick@wg0
-# Don't start WireGuard yet as the server public key needs to be filled in
+sudo wg-quick up wg0
 
 ## Write Configuration to File
 # Save configuration data and WireGuard public key

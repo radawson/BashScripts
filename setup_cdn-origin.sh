@@ -96,30 +96,29 @@ echo "Creating content directory"
 sudo mkdir -p /var/www/content
 sudo chown -R www-data:www-data /var/www/content
 
-# Get SSL certificate
-echo "Obtaining SSL certificate for ${FQDN}"
+# Try to get SSL certificate
+echo "Attempting to obtain SSL certificate for ${FQDN}"
 sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@${DOMAIN} \
   -d ${FQDN} --preferred-challenges http-01
 
-# Configure NGINX for origin server
-if [ ! -f /etc/letsencrypt/live/${FQDN}/fullchain.pem ]; then
-    echo "Certificate generation failed!"
-else
-    echo "Creating NGINX configuration for ${FQDN}"
+# Configure NGINX regardless of certificate success
+echo "Creating NGINX configuration for ${FQDN}"
+if [ -f /etc/letsencrypt/live/${FQDN}/fullchain.pem ]; then
+    # SSL configuration
     sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF 
 server {
-    listen 80;
+    listen 80 default_server;
     server_name ${FQDN};
 
     location ~ /\.well-known/acme-challenge {
         allow all;
     }
 
-    return 301 https://\$host\$request_uri; # Redirect all HTTP to HTTPS
+    return 301 https://\$host\$request_uri;
 }
 
 server {
-    listen 443 ssl http2;
+    listen 443 ssl http2 default_server;
     server_name ${FQDN};
 
     ssl_certificate /etc/letsencrypt/live/${FQDN}/fullchain.pem;
@@ -153,13 +152,42 @@ server {
     }
 }
 EOF
-
-    # Enable the site
-    sudo ln -sf /etc/nginx/sites-available/${FQDN} /etc/nginx/sites-enabled/
+else
+    # HTTP-only configuration (no SSL)
+    echo "Warning: SSL certificate not available. Creating HTTP-only configuration."
+    sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF 
+server {
+    listen 80 default_server;
+    server_name ${FQDN};
+    
+    # Origin server configuration
+    location / {
+        root /var/www/content;
+        index index.html index.htm;
+        
+        # Cache headers
+        add_header X-Origin-Server "true";
+        add_header Cache-Control "public, max-age=3600";
+    }
+    
+    location ~ /\.well-known/acme-challenge {
+        allow all;
+    }
+    
+    # Static content with longer cache times
+    location ~* \.(jpg|jpeg|png|gif|ico|css|js|svg)$ {
+        root /var/www/content;
+        expires 7d;
+        add_header Cache-Control "public, max-age=604800";
+        access_log off;
+    }
+}
+EOF
 fi
 
-# Restart nginx
-sudo systemctl start nginx
+# Enable the site and disable default
+sudo ln -sf /etc/nginx/sites-available/${FQDN} /etc/nginx/sites-enabled/
+sudo rm -f /etc/nginx/sites-enabled/default
 
 # Create sample content
 sudo tee /var/www/content/index.html > /dev/null <<EOF
@@ -270,7 +298,8 @@ echo "AllowedIPs = 10.10.0.\${NODE_NUMBER}/32" | sudo tee -a /etc/wireguard/wg0.
 echo "PersistentKeepalive = 25" | sudo tee -a /etc/wireguard/wg0.conf
 
 # Apply changes without disconnecting existing peers
-sudo wg addconf wg0 <(sudo wg-quick strip wg0)
+sudo wg-quick down wg0
+sudo wg-quick up wg0
 
 echo "CDN node \${NODE_NUMBER} added successfully."
 echo "IP: 10.10.0.\${NODE_NUMBER}"
