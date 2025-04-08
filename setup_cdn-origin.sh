@@ -333,6 +333,78 @@ EOF
 sudo chmod +x /usr/local/bin/add-cdn-node
 sudo chmod +x /usr/local/bin/list-cdn-nodes
 
+
+# Create the GeoIP configuration directory and base configuration file
+echo "Creating GeoIP configuration"
+sudo mkdir -p /etc/powerdns
+sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
+# GeoIP Configuration for ${DOMAIN} CDN
+zones:
+  cdn.${DOMAIN}:
+    - domain: cdn.${DOMAIN}
+      ttl: 300
+      records:
+        origin.${DOMAIN}:
+          - content: 10.10.0.1
+            type: A
+        # Geographic assignments will be added below
+        us-east:
+          - content: 10.10.0.1  # Default to origin until nodes added
+            type: A
+        us-west:
+          - content: 10.10.0.1  # Default to origin until nodes added
+            type: A
+        europe:
+          - content: 10.10.0.1  # Default to origin until nodes added
+            type: A
+        asia:
+          - content: 10.10.0.1  # Default to origin until nodes added
+            type: A
+        default:
+          - content: 10.10.0.1  # Origin is default fallback
+            type: A
+      services:
+        # Use geographic routing for all cdn.${DOMAIN} subdomains
+        "*.cdn.${DOMAIN}": 
+          - "%co.cdn.${DOMAIN}"  # Match by country first
+          - "%cn.cdn.${DOMAIN}"  # Try continent match next
+          - "default.cdn.${DOMAIN}"  # Default fallback
+EOF
+
+# Set proper permissions for the geo-zones.yaml file
+sudo chmod 644 /etc/powerdns/geo-zones.yaml
+
+# Create a script to update the geo configuration with regional assignments
+sudo tee /usr/local/bin/update-geo-regions > /dev/null <<EOF
+#!/bin/bash
+# Script to update regional assignments in the GeoIP configuration
+
+if [[ \$# -ne 3 ]]; then
+    echo "Usage: \$0 <NODE_NUMBER> <REGION> <CONTINENT>"
+    echo "Example: \$0 2 us-east north-america"
+    exit 1
+fi
+
+NODE_NUMBER=\$1
+REGION=\$2
+CONTINENT=\$3
+
+# Update the geo-zones.yaml file with regional assignment
+sudo sed -i "s/        \$REGION:\\n          - content: 10.10.0.[0-9]\\+/        \$REGION:\\n          - content: 10.10.0.\$NODE_NUMBER/g" /etc/powerdns/geo-zones.yaml
+sudo sed -i "s/        \$CONTINENT:\\n          - content: 10.10.0.[0-9]\\+/        \$CONTINENT:\\n          - content: 10.10.0.\$NODE_NUMBER/g" /etc/powerdns/geo-zones.yaml
+
+echo "Updated \$REGION and \$CONTINENT to point to CDN node \$NODE_NUMBER (10.10.0.\$NODE_NUMBER)"
+EOF
+
+sudo chmod +x /usr/local/bin/add-cdn-node
+sudo chmod +x /usr/local/bin/list-cdn-nodes
+sudo chmod +x /usr/local/bin/update-geo-regions
+
+# Setup SSH for Edge Node Pulls
+echo "Setting up SSH for edge node pulls"
+sudo -u root ssh-keygen -f /root/.ssh/id_ed25519 -N "" -t ed25519
+
+
 # Enable and start WireGuard
 echo "Enabling WireGuard"
 sudo systemctl enable wg-quick@wg0
@@ -352,10 +424,12 @@ Configuration Files:
     NGINX: /etc/nginx/sites-available/${FQDN}
     WireGuard: /etc/wireguard/wg0.conf
     Content Directory: /var/www/content
+    GeoIP Configuration: /etc/powerdns/geo-zones.yaml
 
 Management Scripts:
     Add CDN Node: /usr/local/bin/add-cdn-node <NODE_NUMBER> <NODE_PUBLIC_KEY>
     List CDN Nodes: /usr/local/bin/list-cdn-nodes
+    Update Region: /usr/local/bin/update-geo-regions <NODE_NUMBER> <REGION> <CONTINENT>
 EOF
 
 echo "CDN origin server setup complete!"
@@ -363,8 +437,13 @@ echo "==================================="
 echo "To add content to your CDN, place files in: /var/www/content/"
 echo "To add a CDN edge node, use: /usr/local/bin/add-cdn-node <NODE_NUMBER> <NODE_PUBLIC_KEY>"
 echo "To list connected CDN edge nodes, use: /usr/local/bin/list-cdn-nodes"
+echo "To update region assignments, use: /usr/local/bin/update-geo-regions <NODE_NUMBER> <REGION> <CONTINENT>"
 echo ""
 echo "Your WireGuard public key is: ${PUBLIC_KEY}"
 echo "Your WireGuard endpoint is: ${IP}:51822"
 echo ""
 echo "Configuration information saved to: ~/origin_server_config.txt"
+echo ""
+echo "IMPORTANT: For edge nodes to pull the GeoIP configuration, add this public key to"
+echo "           their /root/.ssh/authorized_keys file:"
+sudo cat /root/.ssh/id_ed25519.pub
