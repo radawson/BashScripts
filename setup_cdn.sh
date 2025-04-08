@@ -454,7 +454,7 @@ sudo chmod 644 /var/log/cdn-pull.log
 
 ## Write Configuration to File
 # Save configuration data and WireGuard public key
-PUBLIC_KEY=$(cat /etc/wireguard/client_public.key)
+PUBLIC_KEY=$(sudo cat /etc/wireguard/client_public.key)
 echo "Saving configuration data"
 cat <<EOF >~/cdn_server_config.txt
 -- CDN Server Configuration --
@@ -480,7 +480,6 @@ EOF
 
 echo "CDN server setup complete!"
 echo "Next steps:"
-echo "1. Edit /etc/wireguard/wg0.conf to add the server's public key and correct endpoint IP"
-echo "2. Start WireGuard with: sudo systemctl start wg-quick@wg0"
-echo "3. Configure zone transfers from your main DNS server"
-echo "4. Update the GeoIP zones file at /etc/powerdns/geo-zones.yaml"
+echo "1. Copy the SSH public key to the origin server"
+echo "2. Copy the WireGuard public key to the origin server"
+echo "3. Update the GeoIP zones file at /etc/powerdns/geo-zones.yaml"
