@@ -1580,13 +1580,9 @@ PrivateKey = ${PRIVATE_KEY}
 Address = 10.10.0.1/24
 ListenPort = 51822
 SaveConfig = false
-# Additional security parameters
 PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
-# MTU settings for optimal performance
 MTU = 1420
-# Keep alive settings
-PersistentKeepalive = 25
 
 # CDN nodes will be added here with:
 # [Peer]
