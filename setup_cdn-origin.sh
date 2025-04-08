@@ -163,23 +163,43 @@ const PORT = process.env.PORT || 3000;
 const CONTENT_DIR = '/var/www/content';
 
 // Middleware
-app.use(helmet({ contentSecurityPolicy: false }));
+app.use(helmet({ 
+    contentSecurityPolicy: {
+        directives: {
+            defaultSrc: ["'self'"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com"],
+            styleSrc: ["'self'", "'unsafe-inline'", "cdnjs.cloudflare.com"],
+            imgSrc: ["'self'", "data:", "blob:"],
+            connectSrc: ["'self'"],
+            fontSrc: ["'self'", "cdnjs.cloudflare.com"],
+            objectSrc: ["'none'"],
+            mediaSrc: ["'self'"],
+            frameSrc: ["'none'"],
+            sandbox: ['allow-forms', 'allow-scripts', 'allow-same-origin']
+        }
+    }
+}));
 app.use(morgan('combined'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(fileUpload({
-  limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB max file size
-  abortOnLimit: true,
-  useTempFiles: true,
-  tempFileDir: '/tmp/',
-  createParentPath: true
+    limits: { fileSize: 1024 * 1024 * 1024 }, // 1GB max file size
+    abortOnLimit: true,
+    useTempFiles: true,
+    tempFileDir: '/tmp/',
+    createParentPath: true
 }));
 
 // Serve static files from public directory
-app.use(express.static(path.join(__dirname, 'public')));
+app.use('/public', express.static(path.join(__dirname, 'public')));
 
 // Routes - All routes require authentication
 app.use(basicAuth);
+
+// Serve the admin interface
+app.get('/', (req, res) => {
+    res.sendFile(path.join(__dirname, 'public', 'index.html'));
+});
 
 // List files
 app.get('/api/list', (req, res) => {
@@ -1168,6 +1188,29 @@ server {
     location /admin {
         auth_basic "Restricted Admin Area";
         auth_basic_user_file /etc/nginx/.htpasswd;
+        
+        # Serve static files directly from NGINX
+        location /admin/public {
+            alias /var/www/admin/public;
+            expires 1h;
+            add_header Cache-Control "public, no-transform";
+            try_files \$uri \$uri/ =404;
+        }
+        
+        # Proxy API requests to Node.js
+        location /admin/api {
+            proxy_pass http://localhost:3000/api;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade \$http_upgrade;
+            proxy_set_header Connection 'upgrade';
+            proxy_set_header Host \$host;
+            proxy_set_header X-Real-IP \$remote_addr;
+            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto \$scheme;
+            proxy_cache_bypass \$http_upgrade;
+        }
+        
+        # Proxy all other admin requests to Node.js
         proxy_pass http://localhost:3000/;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;

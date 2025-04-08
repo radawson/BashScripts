@@ -150,11 +150,6 @@ echo "Installing YAML Linter"
 wait_for_apt
 sudo apt-get -y install yamllint
 
-# Install Apache2 Utils for htpasswd
-echo "Installing Apache2 Utils"
-wait_for_apt
-sudo apt-get -y install apache2-utils
-
 ## Software configuration
 # Configure PostgreSQL
 echo "Configuring PostgreSQL"
