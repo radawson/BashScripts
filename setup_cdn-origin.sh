@@ -90,6 +90,11 @@ echo "Installing WireGuard"
 wait_for_apt
 sudo apt-get -y install wireguard wireguard-tools
 
+# Install Yamllint
+echo "Installing yamllint"
+wait_for_apt
+sudo apt-get -y install yamllint
+
 ## Software configuration
 # Create content directory
 echo "Creating content directory"
