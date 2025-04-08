@@ -37,6 +37,9 @@ if [[ -z "${IP}" ]]; then
     exit 1
 fi
 
+# Generate a secure random password for CDN admin interface
+ADMIN_PASSWORD=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
+
 FQDN="origin.${DOMAIN}"
 
 echo "Setting up CDN origin server with FQDN ${FQDN} and IP ${IP}"
@@ -105,11 +108,20 @@ echo "Creating content directory"
 sudo mkdir -p /var/www/content
 sudo chown -R www-data:www-data /var/www/content
 
-# Create the admin interface files directory
-sudo mkdir -p /var/www/admin
+# Update htpasswd file with the secure password instead of prompting
+echo "Creating admin user with secure password"
+sudo htpasswd -b -c /etc/nginx/.htpasswd admin "${ADMIN_PASSWORD}"
 
-# Create the application directory
-sudo mkdir -p /var/www/admin
+# Update the admin credentials file
+sudo mkdir -p /var/www/admin/config
+sudo tee /var/www/admin/config/credentials.json > /dev/null << EOF
+{
+  "admin": "$(echo -n "${ADMIN_PASSWORD}" | sha256sum | awk '{print $1}')"
+}
+EOF
+sudo chown www-data:www-data /var/www/admin/config/credentials.json
+sudo chmod 600 /var/www/admin/config/credentials.json
+
 cd /var/www/admin
 
 # Initialize a new Node.js project
@@ -1747,6 +1759,7 @@ FQDN: ${FQDN}
 IP Address: ${IP}
 WireGuard Public Key: ${PUBLIC_KEY}
 WireGuard Endpoint: ${IP}:51822
+Admmin password: ${ADMIN_PASS}
 
 Configuration Files:
     NGINX: /etc/nginx/sites-available/${FQDN}
