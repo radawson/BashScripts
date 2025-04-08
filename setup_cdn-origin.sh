@@ -103,7 +103,7 @@ sudo certbot certonly --standalone --non-interactive --agree-tos --email admin@$
 
 # Configure NGINX regardless of certificate success
 echo "Creating NGINX configuration for ${FQDN}"
-if [ -f /etc/letsencrypt/live/${FQDN}/fullchain.pem ]; then
+if sudo test -f /etc/letsencrypt/live/${FQDN}/fullchain.pem; then
     # SSL configuration
     sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF 
 server {

@@ -235,7 +235,7 @@ sudo mkdir -p /var/cache/nginx/cdn_cache
 sudo chown -R www-data:www-data /var/cache/nginx/cdn_cache
 
 
-if [ ! -f /etc/letsencrypt/live/${FQDN}/fullchain.pem ]; then
+if sudo test -f /etc/letsencrypt/live/${FQDN}/fullchain.pem; then
     echo "Certificate generation failed!"
 else
     echo "Certificate generated successfully!"
@@ -247,7 +247,7 @@ proxy_cache_path /var/cache/nginx/cdn_cache levels=1:2 keys_zone=cdn_cache:10m m
 proxy_temp_path /var/cache/nginx/cdn_temp;
 EOF
 
-# Create the site configuration without the proxy_cache_path directive in the server block
+# Create the site configuration 
 sudo tee /etc/nginx/sites-available/${FQDN} > /dev/null <<EOF
 server {
     listen 80;
