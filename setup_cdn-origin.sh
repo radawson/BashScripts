@@ -389,7 +389,7 @@ sudo tee /var/www/content/remote.html > /dev/null << 'EOF'
         document.getElementById('language').textContent = navigator.language || navigator.userLanguage;
         document.getElementById('cookies').textContent = navigator.cookieEnabled ? 'Enabled' : 'Disabled';
 
-        // Detect browser - FIXED FUNCTION
+        // Detect browser 
         function detectBrowser() {
             const userAgent = navigator.userAgent;
             let browserName;
