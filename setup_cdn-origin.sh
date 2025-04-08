@@ -89,6 +89,11 @@ sudo apt-get install -y apt-transport-https
 sudo apt-get update
 
 ## Software Installation
+# Install Apache2 Utils for htpasswd
+echo "Installing Apache2 Utils"
+wait_for_apt
+sudo apt-get -y install apache2-utils
+
 # Install CertBot
 echo "Installing CertBot (snap)"
 sudo apt-get remove -y certbot --purge
@@ -1062,6 +1067,7 @@ document.addEventListener('DOMContentLoaded', () => {
 EOF
 
 # Create a systemd service file
+echo "Creating systemd service file for CDN Admin Panel"
 sudo tee /etc/systemd/system/cdn-admin.service >/dev/null <<EOF
 [Unit]
 Description=CDN Admin Panel
@@ -1087,6 +1093,7 @@ sudo mkdir -p /var/www/admin/config
 sudo chown -R www-data:www-data /var/www/admin
 
 # Create htpasswd file for admin area
+echo "Creating htpasswd file for admin area"
 sudo apt-get install -y apache2-utils
 sudo htpasswd -c /etc/nginx/.htpasswd admin
 

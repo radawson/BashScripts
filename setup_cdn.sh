@@ -150,6 +150,11 @@ echo "Installing YAML Linter"
 wait_for_apt
 sudo apt-get -y install yamllint
 
+# Install Apache2 Utils for htpasswd
+echo "Installing Apache2 Utils"
+wait_for_apt
+sudo apt-get -y install apache2-utils
+
 ## Software configuration
 # Configure PostgreSQL
 echo "Configuring PostgreSQL"
@@ -417,6 +422,9 @@ sudo tee /usr/local/bin/pull-ssl-certs >/dev/null <<EOF
 #!/bin/bash
 # Script to pull SSL certificates from origin server
 
+# Log file
+LOG_FILE="/var/log/cdn-pull.log"
+
 # Origin server WireGuard IP
 ORIGIN="10.10.0.1"
 ORIGIN_DOMAIN="origin.${DOMAIN}"
@@ -430,30 +438,71 @@ KEY_DEST="/etc/ssl/private/\${ORIGIN_DOMAIN}/privkey.pem"
 # Create destination directory if it doesn't exist
 sudo mkdir -p /etc/ssl/private/\${ORIGIN_DOMAIN}
 
-# Pull certificates using rsync
-rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${CERT_SOURCE} \${CERT_DEST}
-rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${KEY_SOURCE} \${KEY_DEST}
+echo "\$(date): Starting SSL certificate pull from \$ORIGIN" >> \$LOG_FILE
 
-# Set proper permissions
-sudo chmod 644 \${CERT_DEST}
-sudo chmod 600 \${KEY_DEST}
-sudo chown root:root \${CERT_DEST} \${KEY_DEST}
+# Check if origin server has Let's Encrypt certificates
+if ssh root@\${ORIGIN} "test -f \${CERT_SOURCE}"; then
+    echo "\$(date): Found Let's Encrypt certificates on origin server" >> \$LOG_FILE
+    
+    # Pull certificates using rsync
+    if rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${CERT_SOURCE} \${CERT_DEST} && \
+       rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${KEY_SOURCE} \${KEY_DEST}; then
+        
+        # Set proper permissions
+        sudo chmod 644 \${CERT_DEST}
+        sudo chmod 600 \${KEY_DEST}
+        sudo chown root:root \${CERT_DEST} \${KEY_DEST}
+        
+        echo "\$(date): Successfully pulled Let's Encrypt certificates" >> \$LOG_FILE
+    else
+        echo "\$(date): Failed to pull Let's Encrypt certificates" >> \$LOG_FILE
+        exit 1
+    fi
+else
+    echo "\$(date): No Let's Encrypt certificates found, checking for self-signed certificates" >> \$LOG_FILE
+    
+    # Check for self-signed certificates
+    SELF_SIGNED_CERT="/etc/ssl/private/\${ORIGIN_DOMAIN}/fullchain.pem"
+    SELF_SIGNED_KEY="/etc/ssl/private/\${ORIGIN_DOMAIN}/privkey.pem"
+    
+    if ssh root@\${ORIGIN} "test -f \${SELF_SIGNED_CERT}"; then
+        echo "\$(date): Found self-signed certificates on origin server" >> \$LOG_FILE
+        
+        # Pull self-signed certificates
+        if rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_CERT} \${CERT_DEST} && \
+           rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_KEY} \${KEY_DEST}; then
+            
+            # Set proper permissions
+            sudo chmod 644 \${CERT_DEST}
+            sudo chmod 600 \${KEY_DEST}
+            sudo chown root:root \${CERT_DEST} \${KEY_DEST}
+            
+            echo "\$(date): Successfully pulled self-signed certificates" >> \$LOG_FILE
+        else
+            echo "\$(date): Failed to pull self-signed certificates" >> \$LOG_FILE
+            exit 1
+        fi
+    else
+        echo "\$(date): No certificates found on origin server" >> \$LOG_FILE
+        exit 1
+    fi
+fi
 
 # Update NGINX configuration to use the new certificates
 sudo sed -i "s|ssl_certificate.*|ssl_certificate \${CERT_DEST};|" /etc/nginx/sites-available/${FQDN}
 sudo sed -i "s|ssl_certificate_key.*|ssl_certificate_key \${KEY_DEST};|" /etc/nginx/sites-available/${FQDN}
 
 # Test NGINX configuration
-sudo nginx -t
-
-if [ \$? -eq 0 ]; then
+if sudo nginx -t; then
     # Reload NGINX if configuration is valid
     sudo systemctl reload nginx
-    echo "SSL certificates updated and NGINX reloaded successfully"
+    echo "\$(date): SSL certificates updated and NGINX reloaded successfully" >> \$LOG_FILE
 else
-    echo "Error: NGINX configuration test failed"
+    echo "\$(date): Error: NGINX configuration test failed" >> \$LOG_FILE
     exit 1
 fi
+
+echo "\$(date): Pull operation completed" >> \$LOG_FILE
 EOF
 
 sudo chmod +x /usr/local/bin/pull-ssl-certs
