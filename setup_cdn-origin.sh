@@ -231,7 +231,7 @@ sudo tee /var/www/content/index.html > /dev/null <<EOF
 EOF
 
 # Create a remote.html file in the content directory
-sudo tee /var/www/content/remote.html > /dev/null <<EOF
+sudo tee /var/www/content/remote.html > /dev/null << 'EOF'
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -382,14 +382,14 @@ sudo tee /var/www/content/remote.html > /dev/null <<EOF
         // Basic information collection
         document.getElementById('protocol').textContent = window.location.protocol.replace(':', '');
         document.getElementById('user-agent').textContent = navigator.userAgent;
-        document.getElementById('screen-resolution').textContent = \`\${screen.width}x\${screen.height}\`;
-        document.getElementById('window-size').textContent = \`\${window.innerWidth}x\${window.innerHeight}\`;
-        document.getElementById('color-depth').textContent = \`\${screen.colorDepth} bits\`;
+        document.getElementById('screen-resolution').textContent = `${screen.width}x${screen.height}`;
+        document.getElementById('window-size').textContent = `${window.innerWidth}x${window.innerHeight}`;
+        document.getElementById('color-depth').textContent = `${screen.colorDepth} bits`;
         document.getElementById('timezone').textContent = Intl.DateTimeFormat().resolvedOptions().timeZone;
         document.getElementById('language').textContent = navigator.language || navigator.userLanguage;
         document.getElementById('cookies').textContent = navigator.cookieEnabled ? 'Enabled' : 'Disabled';
 
-        // Detect browser
+        // Detect browser - FIXED FUNCTION
         function detectBrowser() {
             const userAgent = navigator.userAgent;
             let browserName;
@@ -467,7 +467,7 @@ sudo tee /var/www/content/remote.html > /dev/null <<EOF
         })
         .catch(error => {
             document.getElementById('ip-address').textContent = 'Error: Could not fetch client information';
-            document.getElementById('headers-container').innerHTML = \`<div class="error">Error fetching headers: \${error.message}</div>\`;
+            document.getElementById('headers-container').innerHTML = `<div class="error">Error fetching headers: ${error.message}</div>`;
         });
 
         // Network information
@@ -483,14 +483,14 @@ sudo tee /var/www/content/remote.html > /dev/null <<EOF
         // Measure page load time
         window.addEventListener('load', () => {
             const loadTime = performance.now() - startTime;
-            document.getElementById('load-time').textContent = \`\${loadTime.toFixed(2)} ms\`;
+            document.getElementById('load-time').textContent = `${loadTime.toFixed(2)} ms`;
             
             // Measure latency with a small ping request
             const pingStart = performance.now();
             fetch('/remote.html?ping=' + new Date().getTime(), { method: 'HEAD' })
                 .then(() => {
                     const pingTime = performance.now() - pingStart;
-                    document.getElementById('latency').textContent = \`\${pingTime.toFixed(2)} ms\`;
+                    document.getElementById('latency').textContent = `${pingTime.toFixed(2)} ms`;
                 })
                 .catch(() => {
                     document.getElementById('latency').textContent = 'Failed to measure';
