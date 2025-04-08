@@ -187,37 +187,21 @@ EOF
 
 # Create a comprehensive geo-zones.yaml file 
 sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
-# GeoIP Configuration for Technical Operations Group CDN
+# Simple geo-zones.yaml for PowerDNS
 zones:
   cdn.techopsgroup.com:
-    - domain: cdn.techopsgroup.com
-      ttl: 300
-      records:
-        origin.techopsgroup.com:
-          - content: 149.154.27.178
-            type: A
-        cdn002.techopsgroup.com:
-          - content: 10.10.0.2
-            type: A
-        cdn003.techopsgroup.com:
-          - content: 10.10.0.3
-            type: A
-        # Geographic assignments - adjust for your actual CDN nodes
-        us-east:
-          - content: 10.10.0.2  # This CDN node will serve US East
-            type: A
-        us-west:
-          - content: 10.10.0.3  # Another CDN node will serve US West
-            type: A
-        default:
-          - content: 149.154.27.178  # Origin will be default fallback
-            type: A
+  domain: cdn.techopsgroup.com
+    ttl: 300
+    records:
+      default:
+        - content: 10.10.0.1
+          type: A
+      cdn002:
+        - content: 10.10.0.2
+          type: A
     services:
-      # Use geographic routing for all cdn.techopsgroup.com subdomains
-      "*.cdn.techopsgroup.com": 
-        - "%co.cdn.techopsgroup.com"  # Match by country first
-        - "%cn.cdn.techopsgroup.com"  # Try continent match next
-        - "default.cdn.techopsgroup.com"  # Default fallback
+      "*.cdn.techopsgroup.com":
+        - "default.cdn.techopsgroup.com"
 EOF
 
 # Restart PowerDNS to apply configuration
