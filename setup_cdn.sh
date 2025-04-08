@@ -145,6 +145,11 @@ echo "Installing WireGuard"
 wait_for_apt
 sudo apt-get -y install wireguard wireguard-tools
 
+# Install YAML Linter
+echo "Installing YAML Linter"
+wait_for_apt
+sudo apt-get -y install yamllint
+
 ## Software configuration
 # Configure PostgreSQL
 echo "Configuring PostgreSQL"
@@ -190,7 +195,7 @@ sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
 # Simple geo-zones.yaml for PowerDNS
 zones:
   cdn.techopsgroup.com:
-  domain: cdn.techopsgroup.com
+    domain: cdn.techopsgroup.com
     ttl: 300
     records:
       default:
@@ -220,9 +225,10 @@ sudo chown -R www-data:www-data /var/cache/nginx/cdn_cache
 
 
 if sudo test -f /etc/letsencrypt/live/${FQDN}/fullchain.pem; then
-    echo "Certificate generation failed!"
+    echo "Certificate generated successfully!"   
 else
-    echo "Certificate generated successfully!"
+    echo "Error: Certificate generation failed. Please check the logs."
+
 fi
 
 # Create a cache config file
@@ -373,16 +379,27 @@ ORIGIN="10.10.0.1"
 
 # Source and destination files
 SOURCE_FILE="/etc/powerdns/geo-zones.yaml"
+TEMP_FILE="/tmp/geo-zones.yaml"
 DEST_FILE="/etc/powerdns/geo-zones.yaml"
 
 echo "\$(date): Starting geo-zones.yaml pull from \$ORIGIN" >> \$LOG_FILE
 
 # Pull the file using rsync
-rsync -av --rsync-path="sudo rsync" root@\$ORIGIN:\$SOURCE_FILE \$DEST_FILE
+rsync -av --rsync-path="sudo rsync" root@\$ORIGIN:\$SOURCE_FILE \$TEMP_FILE
 
 if [ \$? -eq 0 ]; then
   echo "\$(date): Successfully pulled geo-zones.yaml" >> \$LOG_FILE
-  
+
+  if yamllint ${TEMP_FILE} 2>&1 | grep -q "error"; then
+    echo "\$(date): "Warning: YAML file has errors. Please check manually." >> \$LOG_FILE
+    exit 1
+  else
+    echo "\$(date): "YAML validation passed." >> \$LOG_FILE
+  fi
+
+  # Move the temp file to the destination
+  sudo mv \$TEMP_FILE \$DEST_FILE
+
   # Fix permissions
   sudo chown pdns:pdns \$DEST_FILE
   sudo chmod 644 \$DEST_FILE
