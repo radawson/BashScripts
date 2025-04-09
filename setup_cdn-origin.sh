@@ -1319,10 +1319,9 @@ echo "Creating certificate request for ${FQDN} with SANs for ${CDN_DOMAIN}"
 
 # Create directory for certificates
 sudo mkdir -p /etc/ssl/private/cdn
-cd /etc/ssl/private/cdn
 
 # Generate private key and CSR
-openssl req -new -sha256 -nodes -out ${FQDN}.csr -newkey rsa:4096 -keyout ${FQDN}.key -config <(
+openssl req -new -sha256 -nodes -out \${FQDN}.csr -newkey rsa:4096 -keyout \${FQDN}.key -config <(
 cat <<-EOF
 [req]
 prompt = no
@@ -1341,14 +1340,18 @@ subjectAltName = @alt_names
 [ alt_names ]
 DNS.1 = \${FQDN}
 DNS.2 = \${CDN_DOMAIN}
+DNS.3 = origin.\${DOMAIN}
 IP.1 = \${IP}
 IP.2 = \${CDN_IP}
 EOF
 )
 
 # Set permissions
-chmod 400 \${FQDN}.key
-chmod 644 \${FQDN}.csr
+sudo chmod 400 \${FQDN}.key
+sudo chmod 644 \${FQDN}.csr
+
+sudo cp \${FQDN}* /etc/ssl/private/cdn
+sudo chown -R www-data:www-data /etc/ssl/private/cdn
 
 echo "Certificate request generated:"
 echo "Private key: /etc/ssl/private/cdn/\${FQDN}.key"
