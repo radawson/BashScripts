@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.1.1
+#v1.1.2
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
@@ -1749,7 +1749,7 @@ if [[ "\${#NODE_PUBLIC_KEY}" -ne 44 ]]; then
 fi
 
 # Check if the node already exists
-if grep -q "\${NODE_PUBLIC_KEY}" /etc/wireguard/wg0.conf; then
+if sudo grep -q "\${NODE_PUBLIC_KEY}" /etc/wireguard/wg0.conf; then
     echo "Error: Node with this public key already exists."
     exit 1
 fi
