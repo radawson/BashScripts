@@ -520,12 +520,6 @@ PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING 
 # MTU settings for optimal performance
 MTU = 1420
 
-[Peer]
-# Note: Replace this with the actual origin server public key
-PublicKey = <ORIGIN_PUBLIC_KEY>
-Endpoint = origin.${DOMAIN}:51822
-AllowedIPs = 10.10.0.0/24
-PersistentKeepalive = 25
 EOF
 
 # Create a script to update WireGuard configuration with origin server key
@@ -541,11 +535,7 @@ fi
 ORIGIN_KEY=\$1
 
 # Update the WireGuard configuration
-sudo sed -i "s|<ORIGIN_PUBLIC_KEY>|\${ORIGIN_KEY}|" /etc/wireguard/wg0.conf
-
-# Restart WireGuard to apply changes
-sudo wg-quick down wg0
-sudo wg-quick up wg0
+sudo wg set wg0 peer \${ORIGIN_KEY} endpoint origin.${DOMAIN}:51822 allowed-ips 10.10.0.0/24 persistent-keepalive 25
 
 echo "WireGuard configuration updated with origin server key"
 EOF

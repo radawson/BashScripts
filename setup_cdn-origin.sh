@@ -1706,7 +1706,7 @@ sudo tee "${WG_CONFIG}" >/dev/null <<EOF
 PrivateKey = ${PRIVATE_KEY}
 Address = 10.10.0.1/24
 ListenPort = 51822
-SaveConfig = false
+SaveConfig = true
 PostUp = iptables -A FORWARD -i wg0 -j ACCEPT; iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
 PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
 MTU = 1420
@@ -1756,15 +1756,9 @@ fi
 
 # Add the node to WireGuard configuration
 echo "Adding CDN node \${NODE_NUMBER} with IP 10.10.0.\${NODE_NUMBER}"
-echo "" | sudo tee -a /etc/wireguard/wg0.conf
-echo "[Peer]" | sudo tee -a /etc/wireguard/wg0.conf
-echo "PublicKey = \${NODE_PUBLIC_KEY}" | sudo tee -a /etc/wireguard/wg0.conf
-echo "AllowedIPs = 10.10.0.\${NODE_NUMBER}/32" | sudo tee -a /etc/wireguard/wg0.conf
-echo "PersistentKeepalive = 25" | sudo tee -a /etc/wireguard/wg0.conf
 
 # Apply changes without disconnecting existing peers
-sudo wg-quick down wg0
-sudo wg-quick up wg0
+sudo wg set wg0 peer \${NODE_PUBLIC_KEY} allowed-ips 10.10.0.\${NODE_NUMBER}/32 persistent-keepalive 25
 
 echo "CDN node \${NODE_NUMBER} added successfully."
 echo "IP: 10.10.0.\${NODE_NUMBER}"
