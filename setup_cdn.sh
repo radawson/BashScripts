@@ -415,37 +415,38 @@ sudo chmod +x /usr/local/bin/update-wireguard-config
 # Create a script to create a certificate request
 sudo tee /usr/local/bin/req-ssl-certs >/dev/null <<EOF
 #!/bin/bash
-# Usage: ./create-cert-request.sh <CDN_NUMBER> [DOMAIN]
+# Usage: \$0 <CDN_NUMBER> [DOMAIN]
 
 # Validate arguments
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo "Usage: $0 <CDN_NUMBER> [DOMAIN]"
+if [[ \$# -lt 1 || \$# -gt 2 ]]; then
+    echo "Usage: \$0 <CDN_NUMBER> [DOMAIN]"
     exit 1
 fi
 
 # Set variables
-CDN_NUMBER=${1}
-CDN_NUMBER_PADDED=$(printf "%03d" ${CDN_NUMBER})
+CDN_NUMBER=\${1}
+CDN_NUMBER_PADDED=\$(printf "%03d" \${CDN_NUMBER})
 
-if [[ $# -eq 2 ]]; then
-    DOMAIN=${2}
+if [[ \$# -eq 2 ]]; then
+    DOMAIN=\${2}
 else
     DOMAIN="techopsgroup.com"
 fi
 
 # Get IP address
-IP=$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print $4}' | cut -d/ -f1)
-FQDN="cdn${CDN_NUMBER_PADDED}.${DOMAIN}"
-CDN_DOMAIN="cdn.${DOMAIN}"
+IP=\$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print \$4}' | cut -d/ -f1)
+FQDN="cdn\${CDN_NUMBER_PADDED}.\${DOMAIN}"
+CDN_DOMAIN="cdn.\${DOMAIN}"
+CDN_IP="10.10.0.\${CDN_NUMBER}"
 
 echo "Creating certificate request for ${FQDN} with SANs for ${CDN_DOMAIN}"
 
 # Create directory for certificates
-mkdir -p /etc/ssl/private/cdn
+sudo mkdir -p /etc/ssl/private/cdn
 cd /etc/ssl/private/cdn
 
 # Generate private key and CSR
-openssl req -new -sha256 -nodes -out ${FQDN}.csr -newkey rsa:2048 -keyout ${FQDN}.key -config <(
+openssl req -new -sha256 -nodes -out ${FQDN}.csr -newkey rsa:4096 -keyout ${FQDN}.key -config <(
 cat <<-EOF
 [req]
 prompt = no
@@ -458,35 +459,41 @@ ST=North Carolina
 L=Fayetteville
 O=Technical Operations Group
 OU=CDN
-CN = ${FQDN}
+CN = \${FQDN}
 [ req_ext ]
 subjectAltName = @alt_names
 [ alt_names ]
-DNS.1 = ${FQDN}
-DNS.2 = ${CDN_DOMAIN}
-IP.1 = ${IP}
+DNS.1 = \${FQDN}
+DNS.2 = \${CDN_DOMAIN}
+IP.1 = \${IP}
+IP.2 = \${CDN_IP}
 EOF
 )
 
 # Set permissions
-chmod 400 ${FQDN}.key
-chmod 644 ${FQDN}.csr
+chmod 400 \${FQDN}.key
+chmod 644 \${FQDN}.csr
 
 echo "Certificate request generated:"
-echo "Private key: /etc/ssl/private/cdn/${FQDN}.key"
-echo "CSR: /etc/ssl/private/cdn/${FQDN}.csr"
+echo "Private key: /etc/ssl/private/cdn/\${FQDN}.key"
+echo "CSR: /etc/ssl/private/cdn/\${FQDN}.csr"
 echo ""
 echo "To obtain a certificate with Let's Encrypt, use:"
-echo "sudo certbot certonly --standalone --csr /etc/ssl/private/cdn/${FQDN}.csr \\"
-echo "  --key-path /etc/ssl/private/cdn/${FQDN}.key \\"
-echo "  --fullchain-path /etc/ssl/certs/${FQDN}.crt"
+echo "sudo certbot certonly --standalone --csr /etc/ssl/private/cdn/\${FQDN}.csr \\"
+echo "  --key-path /etc/ssl/private/cdn/\${FQDN}.key \\"
+echo "  --fullchain-path /etc/ssl/certs/\${FQDN}.crt"
 echo ""
+echo "Note that this will fail because of the IP address in the request."
 echo "Certificate information:"
-openssl req -text -noout -in ${FQDN}.csr | grep -A 5 "Subject Alternative Name"
+openssl req -text -noout -in \${FQDN}.csr | grep -A 5 "Subject Alternative Name"
+
 EOF
 
 # Make the script executable
 sudo chmod +x /usr/local/bin/pull-ssl-certs
+
+# Create Certificate Request
+sudo /usr/local/bin/req-ssl-certs ${CDN_NUMBER}
 
 # Create the pull script for geo-zones
 sudo tee /usr/local/bin/pull-geozones.sh >/dev/null <<EOF
