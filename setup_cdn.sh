@@ -741,8 +741,12 @@ PowerDNS Database:
     Database User: pdns
     Database Password: ${DB_PASSWORD}
 
-Certificate Path: /etc/letsencrypt/live/${FQDN}/
-Origin Server Certificate Path: /etc/ssl/private/origin.${DOMAIN}/
+Certificate Paths:
+    Let's Encrypt Certificate: /etc/letsencrypt/live/${FQDN}/
+    Origin Server Certificate: /etc/ssl/private/origin.${DOMAIN}/
+    Certificate Request (CSR): /etc/ssl/private/cdn/${FQDN}.csr
+    Private Key for CSR: /etc/ssl/private/cdn/${FQDN}.key
+    Target Path for Signed Cert: /etc/ssl/certs/${FQDN}.crt
 
 Configuration Files:
     PowerDNS: /etc/powerdns/pdns.conf
@@ -757,9 +761,29 @@ Management Scripts:
 EOF
 
 echo "CDN server setup complete!"
+echo ""
 echo "Next steps:"
-echo "1. Copy the SSH public key to the origin server"
-echo "2. Copy the WireGuard public key to the origin server"
-echo "3. Run: /usr/local/bin/update-wireguard-config <ORIGIN_PUBLIC_KEY>"
-echo "4. Run: /usr/local/bin/pull-ssl-certs"
-echo "5. Run: /usr/local/bin/pull-geozones.sh"
+echo "1. Copy your SSH public key to the origin server:"
+echo "   ssh-copy-id -i /root/.ssh/id_ed25519.pub root@origin.${DOMAIN}"
+echo ""
+echo "2. On the origin server, add your CDN node using your WireGuard public key:"
+echo "   /usr/local/bin/add-cdn-node ${CDN_NUMBER} ${PUBLIC_KEY}"
+echo ""
+echo "3. Configure WireGuard with the origin server's public key:"
+echo "   /usr/local/bin/update-wireguard-config <ORIGIN_PUBLIC_KEY>"
+echo ""
+echo "4. Certificate management:"
+echo "   - A CSR has been generated at: /etc/ssl/private/cdn/${FQDN}.csr"
+echo "   - Submit this CSR to your certificate authority for signing"
+echo "   - Once signed, place the certificate at: /etc/ssl/certs/${FQDN}.crt"
+echo "   - Update the NGINX configuration to use the new certificate"
+echo ""
+echo "5. Download GeoIP configuration from the origin server:"
+echo "   /usr/local/bin/pull-geozones.sh"
+echo ""
+echo "6. Verify connections and services:"
+echo "   - PowerDNS service: systemctl status pdns"
+echo "   - WireGuard connection: wg show"
+echo "   - NGINX configuration: nginx -t"
+echo ""
+echo "All configuration details have been saved to: ~/cdn_server_config.txt"
