@@ -153,7 +153,7 @@ sudo apt-get -y install yamllint
 ## Software configuration
 # Configure PostgreSQL
 echo "Configuring PostgreSQL"
-sudo -u postgres psql -c "CREATE USER pdns_user SUPERUSER WITH PASSWORD '${DB_PASSWORD}';"
+sudo -u postgres psql -c "CREATE USER pdns_user WITH SUPERUSER PASSWORD '${DB_PASSWORD}';"
 sudo -u postgres psql -c "CREATE DATABASE pdns OWNER pdns_user;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pdns_user;"
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pdns_user;"
@@ -401,7 +401,7 @@ fi
 ORIGIN_KEY=\$1
 
 # Update the WireGuard configuration
-sudo sed -i "s/<ORIGIN_PUBLIC_KEY>/\${ORIGIN_KEY}/" /etc/wireguard/wg0.conf
+sudo sed -i "s|<ORIGIN_PUBLIC_KEY>|\${ORIGIN_KEY}|" /etc/wireguard/wg0.conf
 
 # Restart WireGuard to apply changes
 sudo wg-quick down wg0
@@ -413,7 +413,7 @@ EOF
 sudo chmod +x /usr/local/bin/update-wireguard-config
 
 # Create a script to create a certificate request
-sudo tee /usr/local/bin/req-ssl-certs >/dev/null <<EOF
+sudo tee /usr/local/bin/req-ssl-certs >/dev/null <<EOF2
 #!/bin/bash
 # Usage: \$0 <CDN_NUMBER> [DOMAIN]
 
@@ -488,7 +488,7 @@ echo "Note that this will fail because of the IP address in the request."
 echo "Certificate information:"
 openssl req -text -noout -in \${FQDN}.csr | grep -A 5 "Subject Alternative Name"
 
-EOF
+EOF2
 
 # Make the script executable
 sudo chmod +x /usr/local/bin/pull-ssl-certs
