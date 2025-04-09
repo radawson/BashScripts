@@ -695,7 +695,7 @@ sudo chmod +x /usr/local/bin/pull-geozones.sh
 # Add origin SSH key to root's authorized keys
 sudo mkdir -p /root/.ssh
 sudo tee -a /root/.ssh/authorized_keys > /dev/null <<EOF
-ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIIbGyExkYKUy/DqZDcdYv+nzSlUnbMh1A1kXDn505/Kd root@origin.techopsgroup.com
+ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAEGjjryTFSewSfNc8bn6vqrs1YAi5qgBjBM7p5exfwO root@origin.techopsgroup.com
 EOF
 
 # Set up SSH key for root user if it doesn't exist

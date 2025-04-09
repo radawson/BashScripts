@@ -1917,33 +1917,31 @@ sudo chmod +x /usr/local/bin/update-geo-regions
 echo "Setting up SSH for edge node pulls"
 sudo -u root ssh-keygen -f /root/.ssh/id_ed25519 -N "" -t ed25519
 
-# Create a script to distribute SSL certificates to edge nodes
-sudo tee /usr/local/bin/distribute-cert >/dev/null <<EOF
+# Create a script to distribute SSH certificates to edge nodes
+sudo tee /usr/local/bin/distribute-ssh-cert >/dev/null <<EOF
 #!/bin/bash
-# Script to distribute SSL certificates to edge nodes
+# Script to distribute SSH certificates to edge nodes
 
-if [[ \$# -ne 2 ]]; then
-    echo "Usage: \$0 <NODE_NUMBER> <NODE_IP>"
+if [[ \$# -lt 1 || \$# -gt 2 ]]; then
+    echo "Usage: \$0 <NODE_NUMBER> [NODE_IP]"
     exit 1
 fi
 
 NODE_NUMBER=\$1
-NODE_IP=\$2
 
-# Create certificate directory on edge node
-ssh -i /root/.ssh/id_ed25519 root@\${NODE_IP} "mkdir -p /etc/ssl/private/${FQDN}"
+if [[ \$# -eq 2 ]]; then
+    NODE_IP=\$2
+else
+    NODE_IP=10.10.0.\${NODE_NUMBER}
+fi
 
-# Copy certificate files
-scp -i /root/.ssh/id_ed25519 /etc/letsencrypt/live/${FQDN}/fullchain.pem root@\${NODE_IP}:/etc/ssl/private/${FQDN}/
-scp -i /root/.ssh/id_ed25519 /etc/letsencrypt/live/${FQDN}/privkey.pem root@\${NODE_IP}:/etc/ssl/private/${FQDN}/
+# Copy SSH certificate from edge node
+scp -i /root/.ssh/id_ed25519 root@\${NODE_IP}:/root/.ssh/id_ed25519.pub /root/.ssh/id_ed25519_cdn_${NODE_NUMBER}.pub
 
-# Set proper permissions
-ssh -i /root/.ssh/id_ed25519 root@\${NODE_IP} "chmod 600 /etc/ssl/private/${FQDN}/*"
-
-echo "SSL certificates distributed to node \${NODE_NUMBER} (\${NODE_IP})"
+echo "SSH certificates distributed to node \${NODE_NUMBER} (\${NODE_IP})"
 EOF
 
-sudo chmod +x /usr/local/bin/distribute-cert
+sudo chmod +x /usr/local/bin/distribute-ssh-cert
 
 # Enable and start WireGuard
 echo "Enabling WireGuard"
