@@ -1,5 +1,5 @@
-#!/bin/bash
-#v1.1.2
+
+#v1.1.3
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
@@ -192,74 +192,6 @@ EOF
 
 # Create a comprehensive geo-zones.yaml file 
 sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
----
-# GeoIP Configuration for techopsgroup.com CDN
-zones:
-  cdn.techopsgroup.com:
-    domain: cdn.techopsgroup.com
-    ttl: 300
-    records:
-      # CDN node records with public IPs
-      cdn001:
-        - content: 149.154.27.178
-          type: A
-      cdn002:
-        - content: 155.138.211.253
-          type: A
-      cdn003:
-        - content: 104.156.231.127
-          type: A
-      cdn004:
-        - content: 80.240.29.48
-          type: A
-      cdn005:
-        - content: 139.84.194.171
-          type: A
-
-
-      # Geographic routing - Countries
-      us:
-        - content: 155.138.211.253
-          type: A
-      au:
-        - content: 139.84.194.171
-          type: A
-      de:
-        - content: 80.240.29.48
-          type: A
-
-      # Geographic routing - Continents
-      north-america:
-        - content: 155.138.211.253
-          type: A
-      europe:
-        - content: 80.240.29.48
-          type: A
-      australia:
-        - content: 139.84.194.171
-          type: A
-
-      # Default fallback
-      default:
-        - content: 149.154.27.178
-          type: A
-
-    # Service mappings
-    services:
-      # Main CDN hostname
-      "cdn.techopsgroup.com":
-        - "%co.origin.techopsgroup.com"
-        - "%cn.origin.techopsgroup.com"
-        - "default.origin.techopsgroup.com"
-
-      # All subdomains
-      "*.cdn.techopsgroup.com":
-        - "%co.origin.techopsgroup.com"
-        - "%cn.origin.techopsgroup.com"
-        - "default.origin.techopsgroup.com"
-ghostrider@origin:~$ sudo nano /etc/powerdns/geo-zones.yaml
-ghostrider@origin:~$ yamllint /etc/powerdns/geo-zones.yaml
-ghostrider@origin:~$ sudo cat /etc/powerdns/geo-zones.yaml
 ---
 # GeoIP Configuration for techopsgroup.com CDN
 zones:
@@ -626,7 +558,7 @@ openssl req -text -noout -in \${FQDN}.csr | grep -A 5 "Subject Alternative Name"
 EOF2
 
 # Make the script executable
-sudo chmod +x /usr/local/bin/pull-ssl-certs
+sudo chmod +x /usr/local/bin/req-ssl-certs
 
 # Create Certificate Request
 sudo /usr/local/bin/req-ssl-certs ${CDN_NUMBER}
@@ -756,7 +688,7 @@ Configuration Files:
 
 Management Scripts:
     Update WireGuard Config: /usr/local/bin/update-wireguard-config <ORIGIN_PUBLIC_KEY>
-    Pull SSL Certificates: /usr/local/bin/pull-ssl-certs
+    RequestSSL Certificates: /usr/local/bin/req-ssl-certs
     Pull GeoIP Zones: /usr/local/bin/pull-geozones.sh
 EOF
 
