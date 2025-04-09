@@ -578,6 +578,7 @@ EOF
 # Set up SSH key for root user if it doesn't exist
 if [ ! -f /root/.ssh/id_ed25519 ]; then
   sudo -u root ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N ""
+  sudo cp /root/.ssh/id_ed25519 ~/.ssh/id_ed25519
   echo "SSH key generated. You need to copy this public key to the origin server:"
   echo "--------------------------------------------------------"
   sudo cat /root/.ssh/id_ed25519.pub
