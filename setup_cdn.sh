@@ -507,6 +507,7 @@ WG_IP="10.10.0.${CDN_NUMBER}/24"
 # Create directory for origin server certificates
 sudo mkdir -p /etc/ssl/private/origin.${DOMAIN}
 
+# Create WireGuard configuration file
 echo "Creating WireGuard configuration file"
 sudo tee "${WG_CONFIG}" > /dev/null <<EOF
 [Interface]
@@ -521,6 +522,10 @@ PostDown = iptables -D FORWARD -i wg0 -j ACCEPT; iptables -t nat -D POSTROUTING 
 MTU = 1420
 
 EOF
+
+# Start WireGuard interface
+echo "Starting WireGuard interface wg0"
+sudo wg-quick up wg0
 
 # Create a script to update WireGuard configuration with origin server key
 sudo tee /usr/local/bin/update-wireguard-config >/dev/null <<EOF
