@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.1.2
+#v1.2.0
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
@@ -39,7 +39,7 @@ fi
 
 # Generate a secure random password for CDN admin interface
 ADMIN_PASSWORD=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c 12)
-
+DB_PASSWORD=$(openssl rand -base64 18 | tr -dc 'a-zA-Z0-9' | head -c 18)
 FQDN="origin.${DOMAIN}"
 
 echo "Setting up CDN origin server with FQDN ${FQDN} and IP ${IP}"
@@ -64,6 +64,7 @@ echo "Configuring firewall"
 sudo ufw allow 22/tcp    # SSH
 sudo ufw allow 80/tcp    # HTTP
 sudo ufw allow 443/tcp   # HTTPS
+sudo ufw allow 8081/tcp  # Admin API
 sudo ufw allow 51822/udp # WireGuard
 sudo ufw --force enable
 
@@ -85,6 +86,11 @@ EOF
 echo "Installing apt-transport-https"
 sudo apt-get install -y apt-transport-https
 
+# Add PostgreSQL repository
+echo "Adding PostgreSQL repository"
+sudo apt-get install -y postgresql-common
+sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+
 # Update package list
 sudo apt-get update
 
@@ -100,6 +106,13 @@ sudo apt-get remove -y certbot --purge
 sudo snap install --classic certbot
 sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
+# Download GeoIP databases from P3TERX GitHub repo
+echo "Downloading GeoIP databases from P3TERX GitHub repository"
+sudo mkdir -p /usr/share/GeoIP
+sudo curl -L https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb -o /usr/share/GeoIP/GeoLite2-City.mmdb
+sudo curl -L https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-Country.mmdb -o /usr/share/GeoIP/GeoLite2-Country.mmdb
+sudo chmod 644 /usr/share/GeoIP/*.mmdb
+
 # Install NGINX
 echo "Installing NGINX"
 wait_for_apt
@@ -109,6 +122,17 @@ sudo systemctl stop nginx
 # Install Node.js and npm
 curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
 sudo apt-get install -y nodejs
+
+# Install PostgreSQL
+echo "Installing PostgreSQL"
+wait_for_apt
+sudo apt-get -y install postgresql 
+
+# Install PowerDNS
+echo "Installing PowerDNS and dependencies"
+wait_for_apt
+sudo apt-get -y install pdns-server pdns-backend-pgsql
+sudo systemctl stop pdns
 
 # Install WireGuard
 echo "Installing WireGuard"
@@ -121,6 +145,81 @@ wait_for_apt
 sudo apt-get -y install yamllint
 
 ## Software configuration
+# Configure PostgreSQL
+echo "Configuring PostgreSQL"
+sudo -u postgres psql -c "CREATE USER pdns_user WITH SUPERUSER PASSWORD '${DB_PASSWORD}';"
+sudo -u postgres psql -c "CREATE DATABASE pdns OWNER pdns_user;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO pdns_user;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO pdns_user;"
+sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO pdns_user;"
+
+# Create PowerDNS schema
+echo "Creating PowerDNS schema"
+curl -o schema.pgsql.sql https://raw.githubusercontent.com/PowerDNS/pdns/refs/heads/master/modules/gpgsqlbackend/schema.pgsql.sql
+sudo -u postgres psql pdns < schema.pgsql.sql
+sudo -u postgres psql pdns -c "ALTER TABLE records ADD COLUMN change_date INTEGER;"
+
+
+# Configure PowerDNS
+echo "Configuring PowerDNS"
+sudo tee /etc/powerdns/pdns.conf > /dev/null <<EOF
+# Basic settings
+setuid=pdns
+setgid=pdns
+launch=gpgsql
+
+# Network settings for PowerDNS
+local-address=${IP},${CDN_IP}
+local-port=53
+any-to-tcp=yes
+
+# PostgreSQL backend settings
+gpgsql-host=localhost
+gpgsql-user=pdns_user
+gpgsql-password=${DB_PASSWORD}
+gpgsql-dbname=pdns
+gpgsql-dnssec=yes
+
+# Lua setup
+enable-lua-records=yes
+
+# Allow zone transfers to edge DNS
+primary=yes
+allow-axfr-ips=10.10.0.0/24
+
+# Logging
+log-dns-details=yes
+log-dns-queries=yes
+log-timestamp=yes
+
+# Webserver Configuration
+api=yes
+webserver=yes
+webserver-address=0.0.0.0
+webserver-port=8081
+webserver-password=${ADMIN_PASSWORD}
+EOF
+
+
+# Restart PowerDNS to apply configuration
+echo "Restarting PowerDNS"
+sudo systemctl restart pdns
+
+# Create initial DNS zone elements
+echo "Creating initial DNS zone elements"
+sudo pdnsutil create-zone cdn.${DOMAIN} ns001.${DOMAIN}
+
+DOMAIN_ID=$(sudo -u postgres psql -qtAX pdns -c "SELECT id FROM domains WHERE name='cdn.${DOMAIN}';")
+
+sudo -u postgres psql pdns -c "INSERT INTO records (domain_id, name, type, content, ttl)
+VALUES (
+  (SELECT id FROM domains WHERE name = 'cdn.techopsgroup.com'),
+  'cdn.techopsgroup.com',
+  'LUA',
+  'A "if(addr:country == \'US\', \'155.138.211.253\', if(addr:country == \'CA\', \'155.138.211.253\', if(addr:country == \'MX\', \'104.156.231.127\', if(addr:continent == \'EU\', \'80.240.29.48\', if(addr:continent == \'OC\' or addr:continent == \'AS\', \'139.84.194.171\', \'149.154.27.178\'))))"',
+  300
+);"
+
 # Create content directory
 echo "Creating content directory"
 sudo mkdir -p /var/www/content
@@ -1958,6 +2057,12 @@ IP Address: ${IP}
 WireGuard Public Key: ${PUBLIC_KEY}
 WireGuard Endpoint: ${IP}:51822
 Admin password: ${ADMIN_PASSWORD}
+
+Database Configuration:
+    Host: localhost
+    User: pdns_user
+    Password: ${DB_PASSWORD}
+    Database: pdns
 
 Configuration Files:
     NGINX: /etc/nginx/sites-available/${FQDN}

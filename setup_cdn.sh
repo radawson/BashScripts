@@ -1,5 +1,5 @@
 
-#v1.1.3
+#v1.2.0
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
@@ -160,7 +160,10 @@ sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public
 sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON ALL FUNCTIONS IN SCHEMA public TO pdns_user;"
 
 # Create PowerDNS schema
-sudo -u postgres psql pdns < /usr/share/doc/pdns-backend-pgsql/schema.pgsql.sql
+echo "Creating PowerDNS schema"
+curl -o schema.pgsql.sql https://raw.githubusercontent.com/PowerDNS/pdns/refs/heads/master/modules/gpgsqlbackend/schema.pgsql.sql
+sudo -u postgres psql pdns < schema.pgsql.sql
+sudo -u postgres psql pdns -c "ALTER TABLE records ADD COLUMN change_date INTEGER;"
 
 # Configure PowerDNS
 echo "Configuring PowerDNS"
@@ -168,117 +171,60 @@ sudo tee /etc/powerdns/pdns.conf > /dev/null <<EOF
 # Basic settings
 setuid=pdns
 setgid=pdns
-#launch=gpgsql,reoip
+launch=gpgsql
 
 # Network settings for PowerDNS
 local-address=${IP},${CDN_IP}
 local-port=53
+any-to-tcp=yes
 
 # PostgreSQL backend settings
-#gpgsql-host=localhost
-#gpgsql-user=pdns_user
-#gpgsql-password=${DB_PASSWORD}
-#gpgsql-dbname=pdns
-#gpgsql-dnssec=yes
+gpgsql-host=localhost
+gpgsql-user=pdns_user
+gpgsql-password=${DB_PASSWORD}
+gpgsql-dbname=pdns
+gpgsql-dnssec=yes
 
-# GeoIP backend - using correct settings for PowerDNS 4.8
-launch=geoip
-geoip-database-files=/usr/share/GeoIP/GeoLite2-Country.mmdb
-geoip-zones-file=/etc/powerdns/geo-zones.yaml
+# Lua setup
+enable-lua-records=yes
 
 # Allow zone transfers from primary DNS
-allow-axfr-ips=10.10.0.1
+slave=yes
+master=no
+allow-axfr-ips=10.10.0.0/24
+allow-dnsupdate-from=10.10.0.0/24
+allow-notify-from=10.10.0.0/24
+
+# Logging
+log-dns-details=yes
+log-dns-queries=yes
+log-timestamp=yes
+
+# Version Masking
+version-string=anonymous
 EOF
 
-# Create a comprehensive geo-zones.yaml file 
-sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
----
-# GeoIP Configuration for techopsgroup.com CDN
-zones:
-  cdn.techopsgroup.com:
-    domain: cdn.techopsgroup.com
-    ttl: 300
-    records:
-      # CDN node records with public IPs
-      cdn001:
-        - content: 149.154.27.178
-          type: A
-      cdn002:
-        - content: 155.138.211.253
-          type: A
-      cdn003:
-        - content: 104.156.231.127
-          type: A
-      cdn004:
-        - content: 80.240.29.48
-          type: A
-      cdn005:
-        - content: 139.84.194.171
-          type: A
-
-      # US Regional routing
-      us-east:
-        - content: 155.138.211.253  # ATL server
-          type: A
-      us-west:
-        - content: 104.156.231.127  # SF server
-          type: A
-
-      # Geographic routing - Countries
-      us:
-        - content: 155.138.211.253  # Default US to East Coast
-          type: A
-      ca:
-        - content: 155.138.211.253  # Canada to East Coast
-          type: A
-      mx:
-        - content: 104.156.231.127  # Mexico to West Coast
-          type: A
-      au:
-        - content: 139.84.194.171  # Australia
-          type: A
-      de:
-        - content: 80.240.29.48     # Germany
-          type: A
-      fr:
-        - content: 80.240.29.48     # France to EU server
-          type: A
-      gb:
-        - content: 80.240.29.48     # UK to EU server
-          type: A
-
-      # Geographic routing - Continents
-      north-america:
-        - content: 155.138.211.253  # Default North America to East Coast
-          type: A
-      europe:
-        - content: 80.240.29.48     # Europe
-          type: A
-      australia:
-        - content: 139.84.194.171   # Australia/Oceania
-          type: A
-      asia:
-        - content: 139.84.194.171   # Asia to Australia server (closest option)
-          type: A
-
-      # Default fallback
-      default:
-        - content: 149.154.27.178   # Origin server
-          type: A
-
-    # Service mappings
-    services:
-      # Main CDN hostname
-      "cdn.techopsgroup.com":
-        - "%co.cdn.techopsgroup.com"        # First try country match
-        - "%cn.cdn.techopsgroup.com"        # Then try continent match
-        - "default.cdn.techopsgroup.com"    # Default fallback
-
-      # All subdomains
-      "*.cdn.techopsgroup.com":
-        - "%co.cdn.techopsgroup.com"
-        - "%cn.cdn.techopsgroup.com"
-        - "default.cdn.techopsgroup.com"
+# Create base lua file
+echo "Creating base lua file"
+sudo mkdir -p /etc/powerdns/lua
+sudo tee /etc/powerdns/lua/pdns.lua > /dev/null <<EOF
+function preresolve(dq)
+  if dq.qname:toString() == 'cdn.techopsgroup.com.' and dq.qtype == pdns.A then
+    local clientIp = dq.remoteaddr:toString()
+    -- Then do a lookup (ex: call a 'geoip_lookup' function or do some logic)
+    local region = geoip_lookup(clientIp) -- your own function
+    -- Decide which server IP to return based on region
+    if region == 'US' then
+      dq:addAnswer(pdns.A, "155.138.211.253")
+    elseif region == 'EU' then
+      dq:addAnswer(pdns.A, "80.240.29.48")
+    else
+      dq:addAnswer(pdns.A, "149.154.27.178")
+    end
+    return true
+  end
+  return false
+end
 EOF
 
 # Restart PowerDNS to apply configuration
