@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.1.1
+#v1.1.2
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
