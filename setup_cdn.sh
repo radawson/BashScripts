@@ -422,7 +422,7 @@ LOG_FILE="/var/log/cdn-pull.log"
 
 # Origin server WireGuard IP
 ORIGIN="10.10.0.1"
-ORIGIN_DOMAIN="origin.${DOMAIN}"
+ORIGIN_DOMAIN="origin.\${DOMAIN}"
 
 # Source and destination paths
 CERT_SOURCE="/etc/letsencrypt/live/\${ORIGIN_DOMAIN}/fullchain.pem"
@@ -433,15 +433,20 @@ KEY_DEST="/etc/ssl/private/\${ORIGIN_DOMAIN}/privkey.pem"
 # Create destination directory if it doesn't exist
 sudo mkdir -p /etc/ssl/private/\${ORIGIN_DOMAIN}
 
-echo "\$(date): Starting SSL certificate pull from \$ORIGIN" >> \$LOG_FILE
+# Ensure log file exists and has correct permissions
+sudo touch \$LOG_FILE
+sudo chmod 644 \$LOG_FILE
+sudo chown root:root \$LOG_FILE
+
+echo "\$(date): Starting SSL certificate pull from ${ORIGIN}" >> \$LOG_FILE
 
 # Check if origin server has Let's Encrypt certificates
-if ssh root@\${ORIGIN} "test -f \${CERT_SOURCE}"; then
+if ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@\${ORIGIN} "test -f \${CERT_SOURCE}"; then
     echo "\$(date): Found Let's Encrypt certificates on origin server" >> \$LOG_FILE
     
     # Pull certificates using rsync
-    if rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${CERT_SOURCE} \${CERT_DEST} && \
-       rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${KEY_SOURCE} \${KEY_DEST}; then
+    if rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${CERT_SOURCE} \${CERT_DEST} && \
+       rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${KEY_SOURCE} \${KEY_DEST}; then
         
         # Set proper permissions
         sudo chmod 644 \${CERT_DEST}
@@ -460,12 +465,12 @@ else
     SELF_SIGNED_CERT="/etc/ssl/private/\${ORIGIN_DOMAIN}/fullchain.pem"
     SELF_SIGNED_KEY="/etc/ssl/private/\${ORIGIN_DOMAIN}/privkey.pem"
     
-    if ssh root@\${ORIGIN} "test -f \${SELF_SIGNED_CERT}"; then
+    if ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@\${ORIGIN} "test -f \${SELF_SIGNED_CERT}"; then
         echo "\$(date): Found self-signed certificates on origin server" >> \$LOG_FILE
         
         # Pull self-signed certificates
-        if rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_CERT} \${CERT_DEST} && \
-           rsync -av --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_KEY} \${KEY_DEST}; then
+        if rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_CERT} \${CERT_DEST} && \
+           rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_KEY} \${KEY_DEST}; then
             
             # Set proper permissions
             sudo chmod 644 \${CERT_DEST}
@@ -500,9 +505,10 @@ fi
 echo "\$(date): Pull operation completed" >> \$LOG_FILE
 EOF
 
+# Make the script executable
 sudo chmod +x /usr/local/bin/pull-ssl-certs
 
-# Create the pull script
+# Create the pull script for geo-zones
 sudo tee /usr/local/bin/pull-geozones.sh >/dev/null <<EOF
 #!/bin/bash
 # Script to pull geo-zones.yaml from origin server
@@ -518,10 +524,15 @@ SOURCE_FILE="/etc/powerdns/geo-zones.yaml"
 TEMP_FILE="/tmp/geo-zones.yaml"
 DEST_FILE="/etc/powerdns/geo-zones.yaml"
 
+# Ensure log file exists and has correct permissions
+sudo touch \$LOG_FILE
+sudo chmod 644 \$LOG_FILE
+sudo chown root:root \$LOG_FILE
+
 echo "\$(date): Starting geo-zones.yaml pull from \$ORIGIN" >> \$LOG_FILE
 
 # Pull the file using rsync
-rsync -av --rsync-path="sudo rsync" root@\$ORIGIN:\$SOURCE_FILE \$TEMP_FILE
+rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\$ORIGIN:\$SOURCE_FILE \$TEMP_FILE
 
 if [ \$? -eq 0 ]; then
   echo "\$(date): Successfully pulled geo-zones.yaml" >> \$LOG_FILE
