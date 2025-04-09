@@ -534,7 +534,7 @@ sudo tee /var/www/admin/public/index.html >/dev/null <<'EOF'
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CDN Origin Admin Console</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css">
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="/admin/styles.css">
 </head>
 <body>
     <div class="container">
@@ -638,7 +638,7 @@ sudo tee /var/www/admin/public/index.html >/dev/null <<'EOF'
     </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-    <script src="app.js"></script>
+    <script src="/admin/app.js"></script>
 </body>
 </html>
 EOF
@@ -1189,14 +1189,6 @@ server {
         auth_basic "Restricted Admin Area";
         auth_basic_user_file /etc/nginx/.htpasswd;
         
-        # Serve static files directly from NGINX
-        location /admin/public {
-            alias /var/www/admin/public;
-            expires 1h;
-            add_header Cache-Control "public, no-transform";
-            try_files \$uri \$uri/ =404;
-        }
-        
         # Proxy API requests to Node.js
         location /admin/api {
             proxy_pass http://localhost:3000/api;
@@ -1211,16 +1203,14 @@ server {
         }
         
         # Proxy all other admin requests to Node.js
-        location /admin {
-            proxy_pass http://localhost:3000/;
-            proxy_http_version 1.1;
-            proxy_set_header Upgrade \$http_upgrade;
-            proxy_set_header Connection 'upgrade';
-            proxy_set_header Host \$host;
-            proxy_set_header X-Real-IP \$remote_addr;
-            proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-            proxy_set_header X-Forwarded-Proto \$scheme;
-            proxy_cache_bypass \$http_upgrade;
+        location /admin/ {
+            alias /var/www/admin/public/;
+            # If the request is exactly /admin/, load index.html.
+            # If the user tries to go to /admin/styles.css, serve styles.css from the directory, etc.
+            try_files $uri $uri/ /index.html;
+            # Optional: set caching/expires headers
+            expires 1h;
+            add_header Cache-Control "public, no-transform";
         }
     }
 

@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.1.0
+#v1.1.1
 # (c) 2025 Richard Dawson, Technical Operations Group
 # This script sets up a CDN server with NGINX, PowerDNS, and PostgreSQL backend.
 
@@ -412,97 +412,77 @@ EOF
 
 sudo chmod +x /usr/local/bin/update-wireguard-config
 
-# Create a script to pull and configure SSL certificates from origin server
-sudo tee /usr/local/bin/pull-ssl-certs >/dev/null <<EOF
+# Create a script to create a certificate request
+sudo tee /usr/local/bin/req-ssl-certs >/dev/null <<EOF
 #!/bin/bash
-# Script to pull SSL certificates from origin server
+# Usage: ./create-cert-request.sh <CDN_NUMBER> [DOMAIN]
 
-# Log file
-LOG_FILE="/var/log/cdn-pull.log"
-
-# Origin server WireGuard IP
-ORIGIN="10.10.0.1"
-ORIGIN_DOMAIN="origin.\${DOMAIN}"
-
-# Source and destination paths
-CERT_SOURCE="/etc/letsencrypt/live/\${ORIGIN_DOMAIN}/fullchain.pem"
-KEY_SOURCE="/etc/letsencrypt/live/\${ORIGIN_DOMAIN}/privkey.pem"
-CERT_DEST="/etc/ssl/private/\${ORIGIN_DOMAIN}/fullchain.pem"
-KEY_DEST="/etc/ssl/private/\${ORIGIN_DOMAIN}/privkey.pem"
-
-# Create destination directory if it doesn't exist
-sudo mkdir -p /etc/ssl/private/\${ORIGIN_DOMAIN}
-
-# Ensure log file exists and has correct permissions
-sudo touch \$LOG_FILE
-sudo chmod 644 \$LOG_FILE
-sudo chown root:root \$LOG_FILE
-
-echo "\$(date): Starting SSL certificate pull from ${ORIGIN}" >> \$LOG_FILE
-
-# Check if origin server has Let's Encrypt certificates
-if ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@\${ORIGIN} "test -f \${CERT_SOURCE}"; then
-    echo "\$(date): Found Let's Encrypt certificates on origin server" >> \$LOG_FILE
-    
-    # Pull certificates using rsync
-    if rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${CERT_SOURCE} \${CERT_DEST} && \
-       rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${KEY_SOURCE} \${KEY_DEST}; then
-        
-        # Set proper permissions
-        sudo chmod 644 \${CERT_DEST}
-        sudo chmod 600 \${KEY_DEST}
-        sudo chown root:root \${CERT_DEST} \${KEY_DEST}
-        
-        echo "\$(date): Successfully pulled Let's Encrypt certificates" >> \$LOG_FILE
-    else
-        echo "\$(date): Failed to pull Let's Encrypt certificates" >> \$LOG_FILE
-        exit 1
-    fi
-else
-    echo "\$(date): No Let's Encrypt certificates found, checking for self-signed certificates" >> \$LOG_FILE
-    
-    # Check for self-signed certificates
-    SELF_SIGNED_CERT="/etc/ssl/private/\${ORIGIN_DOMAIN}/fullchain.pem"
-    SELF_SIGNED_KEY="/etc/ssl/private/\${ORIGIN_DOMAIN}/privkey.pem"
-    
-    if ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no root@\${ORIGIN} "test -f \${SELF_SIGNED_CERT}"; then
-        echo "\$(date): Found self-signed certificates on origin server" >> \$LOG_FILE
-        
-        # Pull self-signed certificates
-        if rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_CERT} \${CERT_DEST} && \
-           rsync -av -e "ssh -i /root/.ssh/id_ed25519 -o StrictHostKeyChecking=no" --rsync-path="sudo rsync" root@\${ORIGIN}:\${SELF_SIGNED_KEY} \${KEY_DEST}; then
-            
-            # Set proper permissions
-            sudo chmod 644 \${CERT_DEST}
-            sudo chmod 600 \${KEY_DEST}
-            sudo chown root:root \${CERT_DEST} \${KEY_DEST}
-            
-            echo "\$(date): Successfully pulled self-signed certificates" >> \$LOG_FILE
-        else
-            echo "\$(date): Failed to pull self-signed certificates" >> \$LOG_FILE
-            exit 1
-        fi
-    else
-        echo "\$(date): No certificates found on origin server" >> \$LOG_FILE
-        exit 1
-    fi
-fi
-
-# Update NGINX configuration to use the new certificates
-sudo sed -i "s|ssl_certificate.*|ssl_certificate \${CERT_DEST};|" /etc/nginx/sites-available/${FQDN}
-sudo sed -i "s|ssl_certificate_key.*|ssl_certificate_key \${KEY_DEST};|" /etc/nginx/sites-available/${FQDN}
-
-# Test NGINX configuration
-if sudo nginx -t; then
-    # Reload NGINX if configuration is valid
-    sudo systemctl reload nginx
-    echo "\$(date): SSL certificates updated and NGINX reloaded successfully" >> \$LOG_FILE
-else
-    echo "\$(date): Error: NGINX configuration test failed" >> \$LOG_FILE
+# Validate arguments
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+    echo "Usage: $0 <CDN_NUMBER> [DOMAIN]"
     exit 1
 fi
 
-echo "\$(date): Pull operation completed" >> \$LOG_FILE
+# Set variables
+CDN_NUMBER=${1}
+CDN_NUMBER_PADDED=$(printf "%03d" ${CDN_NUMBER})
+
+if [[ $# -eq 2 ]]; then
+    DOMAIN=${2}
+else
+    DOMAIN="techopsgroup.com"
+fi
+
+# Get IP address
+IP=$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print $4}' | cut -d/ -f1)
+FQDN="cdn${CDN_NUMBER_PADDED}.${DOMAIN}"
+CDN_DOMAIN="cdn.${DOMAIN}"
+
+echo "Creating certificate request for ${FQDN} with SANs for ${CDN_DOMAIN}"
+
+# Create directory for certificates
+mkdir -p /etc/ssl/private/cdn
+cd /etc/ssl/private/cdn
+
+# Generate private key and CSR
+openssl req -new -sha256 -nodes -out ${FQDN}.csr -newkey rsa:2048 -keyout ${FQDN}.key -config <(
+cat <<-EOF
+[req]
+prompt = no
+default_md = sha256
+req_extensions = req_ext
+distinguished_name = dn
+[ dn ]
+C=US
+ST=North Carolina
+L=Fayetteville
+O=Technical Operations Group
+OU=CDN
+CN = ${FQDN}
+[ req_ext ]
+subjectAltName = @alt_names
+[ alt_names ]
+DNS.1 = ${FQDN}
+DNS.2 = ${CDN_DOMAIN}
+IP.1 = ${IP}
+EOF
+)
+
+# Set permissions
+chmod 400 ${FQDN}.key
+chmod 644 ${FQDN}.csr
+
+echo "Certificate request generated:"
+echo "Private key: /etc/ssl/private/cdn/${FQDN}.key"
+echo "CSR: /etc/ssl/private/cdn/${FQDN}.csr"
+echo ""
+echo "To obtain a certificate with Let's Encrypt, use:"
+echo "sudo certbot certonly --standalone --csr /etc/ssl/private/cdn/${FQDN}.csr \\"
+echo "  --key-path /etc/ssl/private/cdn/${FQDN}.key \\"
+echo "  --fullchain-path /etc/ssl/certs/${FQDN}.crt"
+echo ""
+echo "Certificate information:"
+openssl req -text -noout -in ${FQDN}.csr | grep -A 5 "Subject Alternative Name"
 EOF
 
 # Make the script executable
@@ -592,9 +572,6 @@ fi
 sudo tee /etc/cron.d/cdn-maintenance >/dev/null <<EOF
 # Pull geo-zones.yaml from origin server hourly
 0 * * * * root /usr/local/bin/pull-geozones.sh
-
-# Pull SSL certificates daily at 3 AM
-0 3 * * * root /usr/local/bin/pull-ssl-certs
 EOF
 
 # Set proper permissions on cron file
