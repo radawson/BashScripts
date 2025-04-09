@@ -192,20 +192,160 @@ EOF
 
 # Create a comprehensive geo-zones.yaml file 
 sudo tee /etc/powerdns/geo-zones.yaml > /dev/null <<EOF
-# Simple geo-zones.yaml for PowerDNS
+---
+# GeoIP Configuration for techopsgroup.com CDN
 zones:
   cdn.techopsgroup.com:
     domain: cdn.techopsgroup.com
     ttl: 300
     records:
-      default:
-        - content: 10.10.0.1
+      # CDN node records with public IPs
+      cdn001:
+        - content: 149.154.27.178
           type: A
       cdn002:
-        - content: 10.10.0.2
+        - content: 155.138.211.253
           type: A
+      cdn003:
+        - content: 104.156.231.127
+          type: A
+      cdn004:
+        - content: 80.240.29.48
+          type: A
+      cdn005:
+        - content: 139.84.194.171
+          type: A
+
+
+      # Geographic routing - Countries
+      us:
+        - content: 155.138.211.253
+          type: A
+      au:
+        - content: 139.84.194.171
+          type: A
+      de:
+        - content: 80.240.29.48
+          type: A
+
+      # Geographic routing - Continents
+      north-america:
+        - content: 155.138.211.253
+          type: A
+      europe:
+        - content: 80.240.29.48
+          type: A
+      australia:
+        - content: 139.84.194.171
+          type: A
+
+      # Default fallback
+      default:
+        - content: 149.154.27.178
+          type: A
+
+    # Service mappings
     services:
+      # Main CDN hostname
+      "cdn.techopsgroup.com":
+        - "%co.origin.techopsgroup.com"
+        - "%cn.origin.techopsgroup.com"
+        - "default.origin.techopsgroup.com"
+
+      # All subdomains
       "*.cdn.techopsgroup.com":
+        - "%co.origin.techopsgroup.com"
+        - "%cn.origin.techopsgroup.com"
+        - "default.origin.techopsgroup.com"
+ghostrider@origin:~$ sudo nano /etc/powerdns/geo-zones.yaml
+ghostrider@origin:~$ yamllint /etc/powerdns/geo-zones.yaml
+ghostrider@origin:~$ sudo cat /etc/powerdns/geo-zones.yaml
+---
+# GeoIP Configuration for techopsgroup.com CDN
+zones:
+  cdn.techopsgroup.com:
+    domain: cdn.techopsgroup.com
+    ttl: 300
+    records:
+      # CDN node records with public IPs
+      cdn001:
+        - content: 149.154.27.178
+          type: A
+      cdn002:
+        - content: 155.138.211.253
+          type: A
+      cdn003:
+        - content: 104.156.231.127
+          type: A
+      cdn004:
+        - content: 80.240.29.48
+          type: A
+      cdn005:
+        - content: 139.84.194.171
+          type: A
+
+      # US Regional routing
+      us-east:
+        - content: 155.138.211.253  # ATL server
+          type: A
+      us-west:
+        - content: 104.156.231.127  # SF server
+          type: A
+
+      # Geographic routing - Countries
+      us:
+        - content: 155.138.211.253  # Default US to East Coast
+          type: A
+      ca:
+        - content: 155.138.211.253  # Canada to East Coast
+          type: A
+      mx:
+        - content: 104.156.231.127  # Mexico to West Coast
+          type: A
+      au:
+        - content: 139.84.194.171  # Australia
+          type: A
+      de:
+        - content: 80.240.29.48     # Germany
+          type: A
+      fr:
+        - content: 80.240.29.48     # France to EU server
+          type: A
+      gb:
+        - content: 80.240.29.48     # UK to EU server
+          type: A
+
+      # Geographic routing - Continents
+      north-america:
+        - content: 155.138.211.253  # Default North America to East Coast
+          type: A
+      europe:
+        - content: 80.240.29.48     # Europe
+          type: A
+      australia:
+        - content: 139.84.194.171   # Australia/Oceania
+          type: A
+      asia:
+        - content: 139.84.194.171   # Asia to Australia server (closest option)
+          type: A
+
+      # Default fallback
+      default:
+        - content: 149.154.27.178   # Origin server
+          type: A
+
+    # Service mappings
+    services:
+      # Main CDN hostname
+      "cdn.techopsgroup.com":
+        - "%co.cdn.techopsgroup.com"        # First try country match
+        - "%cn.cdn.techopsgroup.com"        # Then try continent match
+        - "default.cdn.techopsgroup.com"    # Default fallback
+
+      # All subdomains
+      "*.cdn.techopsgroup.com":
+        - "%co.cdn.techopsgroup.com"
+        - "%cn.cdn.techopsgroup.com"
         - "default.cdn.techopsgroup.com"
 EOF
 
