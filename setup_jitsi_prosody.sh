@@ -2,6 +2,9 @@
 #v1.0.5
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
+# Stop on errors
+set -euo pipefail
+
 if [[ $# -lt 1 || $# -gt 2 ]]; then
     echo "Usage: $0 <DNS DOMAIN> [IP]"
     echo "Example: $0 example.com 192.168.1.1"
@@ -141,18 +144,19 @@ sudo apt-get -y install postgresql
 
 # Install jitsi
 echo "Installing Jitsi"
-sudo debconf-set-selections <<EOF
-jitsi-videobridge2 jitsi-videobridge/jvb-hostname string ${FQDN}
-jitsi-meet-prosody  jitsi-meet/jvb-hostname       string ${FQDN}
-jitsi-meet-web-config  jitsi-meet/cert-choice          select  "Generate a new self-signed certificate (You will later get a chance to obtain a Let's encrypt certificate)"
-jitsi-meet-web-config  jitsi-meet/letsencrypt-email    string  ${ADMIN_MAIL}
-jitsi-meet-web-config	jitsi-meet/jaas-choice	boolean	false
-EOF
-
 curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
 echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list
 wait_for_apt
 sudo apt-get update
+
+sudo debconf-set-selections <<EOF
+jitsi-videobridge jitsi-videobridge/jvb-hostname string ${FQDN}
+jitsi-meet-web-config jitsi-meet/cert-choice select \
+  "Generate a new self-signed certificate (You will later get a chance to obtain a Let's encrypt certificate)"
+jitsi-meet-web-config jitsi-meet/letsencrypt-email string ${ADMIN_MAIL}
+jitsi-meet-web-config jitsi-meet/jaas-choice boolean false
+EOF
+
 sudo apt-get -y install jicofo jitsi-meet jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 lua-dbi-postgresql lua-cjson lua-zlib
 
 ## Software Configuration
@@ -194,27 +198,6 @@ sudo prosodyctl migrator migrate --from=internal --to=sql \
 
 sudo systemctl restart prosody
 
-# Create refresh script for certificates
-cat <<EOF | sudo tee /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
-#!/usr/bin/env bash
-set -e
-DOMAIN="${RENEWED_LINEAGE##*/}"   # “/etc/letsencrypt/live/<domain>”
-
-install -o root -g ssl-cert -m 640 "${RENEWED_LINEAGE}/privkey.pem" \
-        "/etc/jitsi/meet/${DOMAIN}.key"
-install -o root -g ssl-cert -m 644 "${RENEWED_LINEAGE}/fullchain.pem" \
-        "/etc/jitsi/meet/${DOMAIN}.crt"
-
-# Let Prosody import the cert for XMPP
-prosodyctl --root cert import "${RENEWED_LINEAGE}" || true
-
-systemctl reload nginx
-systemctl restart prosody jicofo jitsi-videobridge2
-EOF
-
-sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
-
-
 ## Write Configuration to File
 # Save host data to file for reference
 echo "Saving host data"
@@ -222,7 +205,6 @@ cat <<EOF > ~/server_config.txt
 -- Server Configuration --
 FQDN: ${FQDN}
 IP Address: ${IP}
-Certificate Path: ${CERT_PATH}
 Prosody Database:
     Database Type: PostgreSQL
     Database Name: prosody
