@@ -35,22 +35,38 @@ wait_for_service() {
   return 1
 }
 
-# Check if the domain is valid
-if [[ ! "$1" =~ ^[a-zA-Z0-9.-]+$ ]]; then
-    echo "Invalid domain name. Please use only letters, numbers, and hyphens."
+# Validate domain name format
+DOMAIN=${1}
+if [[ ! "${DOMAIN}" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$ ]]; then
+    echo "❌ Invalid domain name format. Domain must:" >&2
+    echo "   - Start and end with a letter or number" >&2
+    echo "   - Contain only letters, numbers, dots, and hyphens" >&2
+    echo "   - Not contain consecutive dots or hyphens" >&2
     exit 1
 fi
 
-DOMAIN=${1}
-
+# Validate IP address if provided
 if [[ $# -eq 2 ]]; then
     IP=${2}
+    if [[ ! "${IP}" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        echo "❌ Invalid IP address format. Must be in format: xxx.xxx.xxx.xxx" >&2
+        exit 1
+    fi
+    
+    # Validate each octet is between 0-255
+    IFS='.' read -r -a ip_octets <<< "${IP}"
+    for octet in "${ip_octets[@]}"; do
+        if [[ ${octet} -lt 0 || ${octet} -gt 255 ]]; then
+            echo "❌ Invalid IP address. Each octet must be between 0 and 255" >&2
+            exit 1
+        fi
+    done
 else
     IP=$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print $4}' | cut -d/ -f1)
-fi
-if [[ -z "${IP}" ]]; then
-    echo "Unable to determine IP address. Please provide it as the second argument."
-    exit 1
+    if [[ -z "${IP}" ]]; then
+        echo "❌ Unable to determine IP address. Please provide it as the second argument." >&2
+        exit 1
+    fi
 fi
 
 echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
@@ -198,7 +214,7 @@ sudo cp /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/jitsi/meet/${FQDN}.crt
 cat <<EOF | sudo tee /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
 #!/usr/bin/env bash
 set -e
-DOMAIN="${RENEWED_LINEAGE##*/}"   # “/etc/letsencrypt/live/<domain>”
+DOMAIN="${RENEWED_LINEAGE##*/}"   # " /etc/letsencrypt/live/<domain>"
 
 install -o root -g ssl-cert -m 640 "${RENEWED_LINEAGE}/privkey.pem" \
         "/etc/jitsi/meet/${DOMAIN}.key"
