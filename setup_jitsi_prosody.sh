@@ -37,11 +37,12 @@ wait_for_service() {
 
 # Validate domain name format
 DOMAIN=${1}
-if [[ ! "${DOMAIN}" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*[a-zA-Z0-9]$ ]]; then
+if [[ ! "${DOMAIN}" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
     echo "❌ Invalid domain name format. Domain must:" >&2
     echo "   - Start and end with a letter or number" >&2
     echo "   - Contain only letters, numbers, dots, and hyphens" >&2
     echo "   - Not contain consecutive dots or hyphens" >&2
+    echo "   - Not start or end with hyphens" >&2
     exit 1
 fi
 
@@ -162,9 +163,12 @@ echo "Installing PostgreSQL"
 sudo apt-get -y install postgresql
 
 # Install lua packages
-echo "Installing lua packages"
+# Install lua packages and dependencies
+echo "Installing lua packages and OpenSSL development headers"
 wait_for_apt
-sudo apt-get install -y lua5.2 liblua5.2-dev luarocks
+sudo apt-get install -y lua5.2 liblua5.2-dev luarocks libssl-dev openssl build-essential
+
+echo "Installing lua rocks packages..."
 sudo luarocks install basexx
 sudo luarocks install luacrypto
 
@@ -308,8 +312,11 @@ fi
 
 # Update Jitsi Meet configuration to support anonymous domain
 echo "Updating Jitsi Meet frontend configuration..."
-if ! sudo grep -q "anonymousdomain" /etc/jitsi/meet/${FQDN}-config.js; then
-    # Add anonymousdomain after the domain line
+# First try to uncomment existing anonymousdomain line
+if sudo grep -q "// *anonymousdomain:" /etc/jitsi/meet/${FQDN}-config.js; then
+    sudo sed -i "s~^ *// *anonymousdomain:.*~    anonymousdomain: 'guest.${FQDN}',~" /etc/jitsi/meet/${FQDN}-config.js
+elif ! sudo grep -q "anonymousdomain:" /etc/jitsi/meet/${FQDN}-config.js; then
+    # If no anonymousdomain line exists, add it after domain line
     sudo sed -i "/domain: '${FQDN}',/a\\    anonymousdomain: 'guest.${FQDN}'," /etc/jitsi/meet/${FQDN}-config.js
 fi
 
@@ -353,7 +360,7 @@ echo ""
 echo "🎉 JWT authentication enabled successfully!"
 echo ""
 echo "📋 Important notes:"
-echo "1. Your JWT credentials are saved in ~/jwt_credentials.txt"
+echo "1. Your JWT credentials are saved in ~/server_config.txt"
 echo "2. APP_SECRET is what you'll use as JWT_SECRET in OIDC setup"
 echo "3. Meetings now require authentication to CREATE rooms"
 echo "4. Guests can still JOIN rooms without authentication"
