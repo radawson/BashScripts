@@ -135,42 +135,25 @@ sudo apt-get remove -y certbot --purge
 sudo snap install --classic certbot
 sudo ln -s /snap/bin/certbot /usr/bin/certbot
 
-# Install Nginx
-echo "Installing Nginx"
-wait_for_apt
-sudo apt-get -y install nginx
-
 # Install PostgreSQL
 echo "Installing PostgreSQL"
 sudo apt-get -y install postgresql
-
-# Install certificates
-echo "Installing certificates"
-sudo systemctl stop nginx
-sudo mkdir -p /etc/jitsi/meet
-CERT_PATH="/etc/jitsi/meet/${FQDN}"
-sudo certbot certonly --standalone -d ${FQDN} --agree-tos -m ${ADMIN_MAIL} --non-interactive
-sudo install -o root -g ssl-cert -m 640 \
-    /etc/letsencrypt/live/${FQDN}/privkey.pem ${CERT_PATH}.key
-sudo install -o root -g ssl-cert -m 644 \
-    /etc/letsencrypt/live/${FQDN}/fullchain.pem ${CERT_PATH}.crt
-sudo systemctl start nginx
 
 # Install jitsi
 echo "Installing Jitsi"
 sudo debconf-set-selections <<EOF
 jitsi-videobridge2 jitsi-videobridge/jvb-hostname string ${FQDN}
 jitsi-meet-prosody  jitsi-meet/jvb-hostname       string ${FQDN}
-jitsi-meet-web-config	jitsi-meet/cert-choice	select	I want to use my own certificate
-jitsi-meet-web-config	jitsi-meet/cert-path-crt	string	${CERT_PATH}.crt
-jitsi-meet-web-config	jitsi-meet/cert-path-key	string	${CERT_PATH}.key
+jitsi-meet-web-config  jitsi-meet/cert-choice          select  "Generate a new self-signed certificate (You will later get a chance to obtain a Let's encrypt certificate)"
+jitsi-meet-web-config  jitsi-meet/letsencrypt-email    string  ${ADMIN_MAIL}
 jitsi-meet-web-config	jitsi-meet/jaas-choice	boolean	false
 EOF
+
 curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
 echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list
 wait_for_apt
 sudo apt-get update
-sudo apt-get -y install jicofo jitsi-meet jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 jigasi lua-dbi-postgresql lua-cjson lua-zlib
+sudo apt-get -y install jicofo jitsi-meet jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 lua-dbi-postgresql lua-cjson lua-zlib
 
 ## Software Configuration
 
