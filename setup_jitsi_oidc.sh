@@ -8,13 +8,6 @@
 set -Eeuo pipefail
 trap 'echo "❌  error in $BASH_SOURCE:$LINENO: $BASH_COMMAND"' ERR
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo "Usage: $0 <DNS DOMAIN> <OIDC PROVIDER> <client-id> <client-secret>"
-    echo "Example: $0 meet.example.com sso.example.com meet-ex 1q2w3e4r"
-    echo "meet. will be added to the domain"
-    exit 1
-fi
-
 # Validate number of arguments
 if [[ $# -ne 4 ]]; then
     echo "❌ Error: This script requires exactly 4 arguments" >&2
@@ -80,6 +73,19 @@ fi
 
 echo "🔧 Adding OIDC authentication to Jitsi Meet at $FQDN"
 
+JWT_SECRET="your-jitsi-jwt-secret"  # Your existing Jitsi JWT secret
+
+# Choose approach: "prosody" or "adapter"
+APPROACH="adapter"  # Recommended: more stable and easier to maintain
+
+echo "🔧 Adding OIDC authentication to Jitsi Meet at $FQDN using $APPROACH approach"
+
+# Validate inputs
+if [[ -z "$FQDN" || -z "$OIDC_PROVIDER_URL" || -z "$OIDC_CLIENT_ID" || -z "$OIDC_CLIENT_SECRET" ]]; then
+    echo "❌ Please configure all OIDC variables at the top of this script"
+    exit 1
+fi
+
 # Function to wait for apt locks
 wait_for_apt() {
     while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1; do
@@ -88,246 +94,223 @@ wait_for_apt() {
     done
 }
 
-# Install required packages
-echo "📦 Installing required packages..."
-wait_for_apt
-sudo apt-get update
-sudo apt-get install -y lua-cjson prosody-modules
-
 # Backup existing configurations
 echo "💾 Creating configuration backups..."
-sudo cp /etc/prosody/conf.avail/${FQDN}.cfg.lua /etc/prosody/conf.avail/${FQDN}.cfg.lua.backup
 sudo cp /etc/jitsi/meet/${FQDN}-config.js /etc/jitsi/meet/${FQDN}-config.js.backup
-sudo cp /etc/jitsi/jicofo/jicofo.conf /etc/jitsi/jicofo/jicofo.conf.backup
+sudo cp /etc/nginx/sites-available/${FQDN}.conf /etc/nginx/sites-available/${FQDN}.conf.backup
 
-# Configure Prosody for OIDC
-echo "🔐 Configuring Prosody for OIDC authentication..."
+if [[ "$APPROACH" == "prosody" ]]; then
+    echo "📦 Installing Prosody Community Modules approach..."
+    
+    # Install mercurial for cloning prosody-modules
+    wait_for_apt
+    sudo apt-get update
+    sudo apt-get install -y mercurial
+    
+    # Clone prosody-modules repository
+    cd /tmp
+    hg clone https://hg.prosody.im/prosody-modules/ prosody-modules
+    
+    # Create prosody modules directory if it doesn't exist
+    sudo mkdir -p /usr/lib/prosody/modules-enabled
+    
+    # Check for available OIDC/OAuth modules
+    echo "📋 Available authentication modules:"
+    ls prosody-modules/ | grep -E "(auth|oauth|oidc)" || echo "Checking for OIDC modules..."
+    
+    # Install HTTP OAuth2 module (most stable OIDC option)
+    if [ -d "prosody-modules/mod_http_oauth2" ]; then
+        echo "Installing mod_http_oauth2..."
+        sudo cp -r prosody-modules/mod_http_oauth2 /usr/lib/prosody/modules/
+        sudo chown -R prosody:prosody /usr/lib/prosody/modules/mod_http_oauth2
+    fi
+    
+    # Install auth modules
+    for module in mod_auth_custom_http mod_auth_external_insecure; do
+        if [ -d "prosody-modules/$module" ]; then
+            echo "Installing $module..."
+            sudo cp -r prosody-modules/$module /usr/lib/prosody/modules/
+            sudo chown -R prosody:prosody /usr/lib/prosody/modules/$module
+        fi
+    done
+    
+    # Alternative: Install the rwth-acis OIDC module
+    echo "📥 Installing rwth-acis OIDC module as fallback..."
+    wget -O /tmp/mod_auth_openid_connect.lua https://raw.githubusercontent.com/rwth-acis/prosody-auth-OIDC/master/mod_auth_openid_connect.lua
+    sudo cp /tmp/mod_auth_openid_connect.lua /usr/lib/prosody/modules/
+    sudo chown prosody:prosody /usr/lib/prosody/modules/mod_auth_openid_connect.lua
+    
+    # Configure Prosody for OIDC
+    echo "🔐 Configuring Prosody for OIDC..."
+    sudo cp /etc/prosody/conf.avail/${FQDN}.cfg.lua /etc/prosody/conf.avail/${FQDN}.cfg.lua.backup
+    
+    # Update authentication method
+    sudo sed -i 's/authentication.*=.*"internal_hashed"/authentication = "openid_connect"/' /etc/prosody/conf.avail/${FQDN}.cfg.lua
+    
+    # Add OIDC configuration
+    cat <<EOF | sudo tee -a /etc/prosody/conf.avail/${FQDN}.cfg.lua
 
-# Create OIDC configuration for Prosody
-cat <<EOF | sudo tee /etc/prosody/conf.d/95-oidc-auth.cfg.lua
--- OIDC Authentication Configuration
-local json = require "util.json"
-
+-- OIDC Configuration
 oidc_issuer = "${OIDC_ISSUER}"
 oidc_client_id = "${OIDC_CLIENT_ID}"
 oidc_client_secret = "${OIDC_CLIENT_SECRET}"
-oidc_redirect_uri = "https://${FQDN}/_prosody-auth-oidc/redirect"
+oidc_userinfo_endpoint = "${OIDC_PROVIDER_URL}/userinfo"
 
--- OIDC Discovery (automatically fetch configuration)
-oidc_discovery_url = "${OIDC_PROVIDER_URL}/.well-known/openid-configuration"
-
--- Token validation
-oidc_token_endpoint = "${OIDC_PROVIDER_URL}/oauth2/token"
-oidc_authorization_endpoint = "${OIDC_PROVIDER_URL}/oauth2/auth"
-oidc_userinfo_endpoint = "${OIDC_PROVIDER_URL}/oauth2/userinfo"
-
--- User mapping (adjust based on your OIDC provider's claims)
-oidc_username_field = "preferred_username"  -- or "email", "sub", etc.
-oidc_displayname_field = "name"
-EOF
-
-# Update main Prosody configuration for the domain
-echo "📝 Updating Prosody domain configuration..."
-
-# Remove the old authentication line and add OIDC
-sudo sed -i '/authentication.*=.*"internal_hashed"/d' /etc/prosody/conf.avail/${FQDN}.cfg.lua
-
-# Add OIDC authentication configuration to the main domain
-cat <<EOF | sudo tee -a /etc/prosody/conf.avail/${FQDN}.cfg.lua
-
--- OIDC Authentication
-authentication = "oidc"
-oidc_issuer = "${OIDC_ISSUER}"
-oidc_client_id = "${OIDC_CLIENT_ID}"
-oidc_client_secret = "${OIDC_CLIENT_SECRET}"
-oidc_redirect_uri = "https://${FQDN}/_prosody-auth-oidc/redirect"
-
--- Required modules for OIDC
 modules_enabled = {
-    -- Core modules
-    "roster";
-    "saslauth";
-    "tls";
-    "dialback";
-    "disco";
-    "posix";
-    "private";
-    "vcard4";
-    "vcard_legacy";
-    "version";
-    "uptime";
-    "time";
-    "ping";
-    "pep";
-    "register";
-    "admin_adhoc";
+    -- Core modules (keep existing ones)
+    "roster"; "saslauth"; "tls"; "dialback"; "disco";
+    "posix"; "private"; "vcard4"; "vcard_legacy"; "version";
+    "uptime"; "time"; "ping"; "pep"; "register"; "admin_adhoc";
     
     -- Jitsi modules
-    "bosh";
-    "pubsub";
-    "ping";
-    "speakerstats";
-    "conference_duration";
-    "end_conference";
-    "external_services";
+    "bosh"; "pubsub"; "speakerstats"; "conference_duration";
+    "end_conference"; "external_services";
     
-    -- OIDC modules
-    "http";
-    "http_files";
-    "auth_oidc";
+    -- HTTP and OIDC modules
+    "http"; "http_files";
 }
-
--- HTTP configuration for OIDC callbacks
-http_paths = {
-    ["_prosody-auth-oidc"] = "/usr/lib/prosody/modules/mod_auth_oidc/http.lua";
-}
-
--- Enable secure HTTP
-https_ports = { 5281 }
-http_ports = { 5280 }
-
--- Cross-domain configuration for OIDC
-cross_domain_bosh = true
-cross_domain_websocket = true
-
 EOF
 
-# Configure Jitsi Meet frontend for OIDC
-echo "🌐 Configuring Jitsi Meet frontend..."
+elif [[ "$APPROACH" == "adapter" ]]; then
+    echo "📦 Installing Python OIDC Adapter approach (Recommended)..."
+    
+    # Install required packages
+    wait_for_apt
+    sudo apt-get update
+    sudo apt-get install -y python3 python3-pip git python3-venv
+    
+    # Create application directory
+    sudo mkdir -p /opt/jitsi-oidc-adapter
+    cd /opt/jitsi-oidc-adapter
+    
+    # Clone the OIDC adapter
+    sudo git clone https://github.com/aadpM2hhdixoJm3u/jitsi-OIDC-adapter.git .
+    
+    # Create virtual environment and install dependencies
+    sudo python3 -m venv venv
+    sudo ./venv/bin/pip install -r requirements.txt
+    
+    # Create configuration file
+    cat <<EOF | sudo tee app.conf
+[oauth]
+client_id = ${OIDC_CLIENT_ID}
+client_secret = ${OIDC_CLIENT_SECRET}
+issuer = ${OIDC_ISSUER}
+scope = openid email profile
 
-# Update Jitsi Meet configuration
-sudo tee /tmp/jitsi-oidc-config.js > /dev/null <<EOF
-// OIDC Authentication Configuration
-config.authentication = {
-    enabled: true,
-    type: 'XMPP'
-};
+[urls]
+jitsi_base = https://${FQDN}
+oidc_discovery = ${OIDC_PROVIDER_URL}/.well-known/openid-configuration
 
-// Enable authentication for all meetings
-config.hosts = {
-    domain: '${FQDN}',
-    anonymousdomain: 'guest.${FQDN}',
-    authdomain: '${FQDN}',
-    muc: 'conference.${FQDN}',
-    focus: 'focus.${FQDN}'
-};
+[jwt]
+audience = jitsi
+issuer = ${FQDN}
+subject = ${FQDN}
+secret_key = ${JWT_SECRET}
 
-// OIDC specific configuration
-config.oidc = {
-    enabled: true,
-    issuer: '${OIDC_ISSUER}',
-    clientId: '${OIDC_CLIENT_ID}',
-    redirectUri: 'https://${FQDN}/_prosody-auth-oidc/redirect',
-    scope: 'openid profile email',
-    responseType: 'code',
-    prompt: 'login'
-};
-
-// Enable lobby for unauthenticated users
-config.lobby = {
-    enabled: true,
-    autoKnock: false
-};
-
-// Require authentication to create meetings
-config.requireAuthentication = true;
-
+[logging]
+level = INFO
+filename = /var/log/jitsi-oidc-adapter.log
+filemode = a
 EOF
+    
+    # Copy custom body.html
+    sudo cp body.html /etc/jitsi/meet/
+    
+    # Create systemd service
+    cat <<EOF | sudo tee /etc/systemd/system/jitsi-oidc-adapter.service
+[Unit]
+Description=Jitsi OIDC Adapter
+After=network.target
 
-# Merge the OIDC configuration with existing config
-echo "// OIDC Configuration - Added by setup script" | sudo tee -a /etc/jitsi/meet/${FQDN}-config.js
-cat /tmp/jitsi-oidc-config.js | sudo tee -a /etc/jitsi/meet/${FQDN}-config.js
-rm /tmp/jitsi-oidc-config.js
+[Service]
+Type=exec
+User=jitsi-meet
+Group=jitsi-meet
+WorkingDirectory=/opt/jitsi-oidc-adapter
+ExecStart=/opt/jitsi-oidc-adapter/venv/bin/gunicorn --bind 127.0.0.1:8000 --workers 2 app:app
+Restart=always
+RestartSec=10
 
-# Update Jicofo configuration
-echo "⚙️  Configuring Jicofo for OIDC..."
-
-cat <<EOF | sudo tee -a /etc/jitsi/jicofo/jicofo.conf
-
-# OIDC Authentication configuration
-authentication: {
-  enabled: true
-  type: XMPP
-  login-url: https://${FQDN}
-}
-
-# Enable lobby for authenticated meetings
-lobby: {
-  enabled: true
-}
-
-# Conference configuration
-conference: {
-  enable-auto-owner: false
-  auto-owner-pattern: "@${FQDN}"
-}
-
+[Install]
+WantedBy=multi-user.target
 EOF
-
-# Configure nginx for OIDC callbacks
-echo "🌍 Configuring Nginx for OIDC..."
-
-# Add OIDC location blocks to nginx configuration
-sudo tee /tmp/nginx-oidc.conf > /dev/null <<EOF
-    # OIDC Authentication endpoints
-    location /_prosody-auth-oidc/ {
-        proxy_pass http://127.0.0.1:5280/_prosody-auth-oidc/;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_buffering off;
-    }
-
-    # Prosody BOSH endpoint for authenticated connections
-    location /http-bind {
-        proxy_pass http://127.0.0.1:5280/http-bind;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_buffering off;
-    }
-
-EOF
-
-# Insert OIDC configuration into existing nginx config
-sudo sed -i '/location.*\/.*{/r /tmp/nginx-oidc.conf' /etc/nginx/sites-available/${FQDN}.conf
-rm /tmp/nginx-oidc.conf
-
-# Install prosody OIDC module if not already present
-echo "📋 Installing Prosody OIDC module..."
-if [ ! -f /usr/lib/prosody/modules/mod_auth_oidc.lua ]; then
-    cd /tmp
-    wget https://hg.prosody.im/prosody-modules/raw-file/tip/mod_auth_oidc/mod_auth_oidc.lua
-    sudo mkdir -p /usr/lib/prosody/modules/mod_auth_oidc/
-    sudo mv mod_auth_oidc.lua /usr/lib/prosody/modules/mod_auth_oidc/
-    sudo chown -R prosody:prosody /usr/lib/prosody/modules/mod_auth_oidc/
+    
+    # Create log directory
+    sudo mkdir -p /var/log
+    sudo touch /var/log/jitsi-oidc-adapter.log
+    sudo chown jitsi-meet:jitsi-meet /var/log/jitsi-oidc-adapter.log
+    
+    # Set ownership
+    sudo chown -R jitsi-meet:jitsi-meet /opt/jitsi-oidc-adapter
+    
+    # Configure Nginx for OIDC endpoints
+    echo "🌍 Configuring Nginx for OIDC adapter..."
+    
+    # Add OIDC location blocks
+    sudo sed -i '/server_name '"${FQDN}"';/a\
+\
+    # OIDC Authentication endpoints\
+    location /oidc/ {\
+        proxy_pass http://127.0.0.1:8000;\
+        proxy_set_header Host $host;\
+        proxy_set_header X-Real-IP $remote_addr;\
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;\
+        proxy_set_header X-Forwarded-Proto $scheme;\
+        proxy_buffering off;\
+    }\
+\
+    # Custom body.html location\
+    location = /body.html {\
+        alias /etc/jitsi/meet/body.html;\
+    }' /etc/nginx/sites-available/${FQDN}.conf
+    
+    # Enable and start the service
+    sudo systemctl daemon-reload
+    sudo systemctl enable jitsi-oidc-adapter
+    sudo systemctl start jitsi-oidc-adapter
 fi
 
-# Set proper permissions
-echo "🔒 Setting proper permissions..."
-sudo chown -R prosody:prosody /etc/prosody/conf.d/
-sudo chmod 640 /etc/prosody/conf.d/95-oidc-auth.cfg.lua
+# Update Jitsi Meet configuration for JWT authentication
+echo "🌐 Configuring Jitsi Meet for JWT authentication..."
+
+# Enable JWT authentication in Jitsi config
+sudo sed -i '/var config = {/a\
+    // JWT Authentication\
+    authentication: {\
+        enabled: true,\
+        type: "JWT"\
+    },\
+    \
+    // Enable moderator features\
+    requireAuthentication: true,\
+    \
+    // Lobby configuration\
+    lobby: {\
+        enabled: true,\
+        autoKnock: false\
+    },' /etc/jitsi/meet/${FQDN}-config.js
 
 # Test configurations
 echo "🧪 Testing configurations..."
-sudo prosodyctl check config
 sudo nginx -t
 
 # Restart services
 echo "🔄 Restarting services..."
-sudo systemctl restart prosody
 sudo systemctl restart nginx
-sudo systemctl restart jicofo
-sudo systemctl restart jitsi-videobridge2
+
+if [[ "$APPROACH" == "prosody" ]]; then
+    sudo systemctl restart prosody
+    sudo systemctl restart jicofo
+    sudo systemctl restart jitsi-videobridge2
+fi
 
 # Wait for services to start
 sleep 10
 
 # Verify services are running
 echo "✅ Verifying services..."
-for service in prosody nginx jicofo jitsi-videobridge2; do
+for service in nginx; do
     if sudo systemctl is-active --quiet $service; then
         echo "✅ $service is running"
     else
@@ -336,20 +319,57 @@ for service in prosody nginx jicofo jitsi-videobridge2; do
     fi
 done
 
+if [[ "$APPROACH" == "adapter" ]]; then
+    if sudo systemctl is-active --quiet jitsi-oidc-adapter; then
+        echo "✅ jitsi-oidc-adapter is running"
+    else
+        echo "❌ jitsi-oidc-adapter is not running"
+        sudo systemctl status jitsi-oidc-adapter
+    fi
+fi
+
+if [[ "$APPROACH" == "prosody" ]]; then
+    for service in prosody jicofo jitsi-videobridge2; do
+        if sudo systemctl is-active --quiet $service; then
+            echo "✅ $service is running"
+        else
+            echo "❌ $service is not running"
+            sudo systemctl status $service
+        fi
+    done
+fi
+
 echo ""
-echo "🎉 OIDC authentication setup complete!"
+echo "🎉 OIDC authentication setup complete using $APPROACH approach!"
 echo ""
 echo "📋 Next steps:"
 echo "1. Configure your OIDC provider with these settings:"
-echo "   - Redirect URI: https://${FQDN}/_prosody-auth-oidc/redirect"
+if [[ "$APPROACH" == "adapter" ]]; then
+    echo "   - Redirect URI: https://${FQDN}/oidc/redirect"
+else
+    echo "   - Redirect URI: https://${FQDN}/_prosody-auth-oidc/redirect"
+fi
 echo "   - Client ID: ${OIDC_CLIENT_ID}"
 echo "   - Allowed origins: https://${FQDN}"
 echo ""
 echo "2. Test authentication by visiting: https://${FQDN}"
 echo ""
 echo "3. Check logs if issues occur:"
-echo "   - Prosody: sudo journalctl -u prosody -f"
-echo "   - Jicofo: sudo journalctl -u jicofo -f"
 echo "   - Nginx: sudo tail -f /var/log/nginx/error.log"
+if [[ "$APPROACH" == "adapter" ]]; then
+    echo "   - OIDC Adapter: sudo journalctl -u jitsi-oidc-adapter -f"
+    echo "   - OIDC Adapter logs: sudo tail -f /var/log/jitsi-oidc-adapter.log"
+else
+    echo "   - Prosody: sudo journalctl -u prosody -f"
+    echo "   - Jicofo: sudo journalctl -u jicofo -f"
+fi
 echo ""
 echo "📁 Configuration backups saved with .backup extension"
+echo ""
+if [[ "$APPROACH" == "adapter" ]]; then
+    echo "💡 The OIDC Adapter approach is recommended as it:"
+    echo "   - Uses stable JWT authentication (your setup already has PostgreSQL)"
+    echo "   - Doesn't require experimental Prosody modules"
+    echo "   - Provides better error handling and logging"
+    echo "   - Is easier to maintain and debug"
+fi

@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.0.6
+#v1.0.7
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
 # Stop on errors
@@ -73,6 +73,9 @@ echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)
+# Generate random app_id and app_secret
+APP_ID=$(openssl rand -hex 16)
+APP_SECRET=$(openssl rand -hex 32)
 
 if [[ "${DOMAIN}" == meet.* ]]; then
     FQDN="${DOMAIN}"
@@ -158,6 +161,13 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 echo "Installing PostgreSQL"
 sudo apt-get -y install postgresql
 
+# Install lua packages
+echo "Installing lua packages"
+wait_for_apt
+sudo apt-get install -y lua5.2 liblua5.2-dev luarocks
+sudo luarocks install basexx
+sudo luarocks install luacrypto
+
 # Install jitsi
 echo "Installing Jitsi"
 curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
@@ -171,9 +181,11 @@ jitsi-meet-web-config jitsi-meet/cert-choice select \
   "Generate a new self-signed certificate (You will later get a chance to obtain a Let's encrypt certificate)"
 jitsi-meet-web-config jitsi-meet/letsencrypt-email string ${ADMIN_MAIL}
 jitsi-meet-web-config jitsi-meet/jaas-choice boolean false
+jitsi-meet-tokens/app-id string ${APP_ID}
+jitsi-meet-tokens/app-secret string ${APP_SECRET}
 EOF
 
-sudo apt-get -y install jicofo jitsi-meet jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 lua-dbi-postgresql lua-cjson lua-zlib
+sudo apt-get -y install jicofo jitsi-meet jitsi-meet-tokens jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 lua-dbi-postgresql lua-cjson lua-zlib
 
 ## Software Configuration
 
@@ -247,6 +259,8 @@ cat <<EOF > ~/server_config.txt
 -- Server Configuration --
 FQDN: ${FQDN}
 IP Address: ${IP}
+APP_ID: ${APP_ID}
+APP_SECRET: ${APP_SECRET}
 Prosody Database:
     Database Type: PostgreSQL
     Database Name: prosody
@@ -264,25 +278,58 @@ sudo -u postgres psql -d prosody -c "\dt" >> ~/server_config.txt
 # sudo sed -i 's/DefaultTasksMax=65000/DefaultTasksMax=65000/' /etc/systemd/system.conf
 
 echo "Setting recommended Prosody system properties"
-sudo sed -i 's/authentication *=.*/authentication = "internal_hashed"/' \
-        /etc/prosody/conf.avail/${FQDN}.cfg.lua
+# Verify the JWT configuration was applied
+echo "Verifying JWT configuration..."
+if sudo grep -q "authentication.*=.*\"token\"" /etc/prosody/conf.avail/${FQDN}.cfg.lua; then
+    echo "✅ JWT authentication configured by jitsi-meet-tokens package"
+else
+    echo "⚠️  JWT not configured automatically, applying manual configuration..."
+    # Manual JWT configuration as fallback
+    sudo sed -i '/VirtualHost "'${FQDN}'"/,/^VirtualHost\|^Component\|^$/ {
+        s/authentication = "anonymous"/authentication = "token"/
+        /authentication = "token"/a\
+    app_id = "'${APP_ID}'"\
+    app_secret = "'${APP_SECRET}'"\
+    allow_empty_token = false
+    }' /etc/prosody/conf.avail/${FQDN}.cfg.lua
+fi
 
-cat <<EOS | sudo tee -a /etc/prosody/conf.avail/${FQDN}.cfg.lua
+# Check if guest domain exists, if not add it
+if ! sudo grep -q "guest\.${FQDN}" /etc/prosody/conf.avail/${FQDN}.cfg.lua; then
+    echo "Adding guest domain for anonymous users..."
+    cat <<EOF | sudo tee -a /etc/prosody/conf.avail/${FQDN}.cfg.lua
 
--- Guests wait here until a moderator joins
+-- Guests domain for anonymous users
 VirtualHost "guest.${FQDN}"
     authentication = "anonymous"
-    c2s_require_encryption = true
-EOS
+    c2s_require_encryption = false
+EOF
+fi
 
-sudo tee -a /etc/jitsi/jicofo/jicofo.conf >/dev/null <<EOF
+# Update Jitsi Meet configuration to support anonymous domain
+echo "Updating Jitsi Meet frontend configuration..."
+if ! sudo grep -q "anonymousdomain" /etc/jitsi/meet/${FQDN}-config.js; then
+    # Add anonymousdomain after the domain line
+    sudo sed -i "/domain: '${FQDN}',/a\\    anonymousdomain: 'guest.${FQDN}'," /etc/jitsi/meet/${FQDN}-config.js
+fi
 
-authentication: {
-  enabled: true
-  type: XMPP
-  login-url: XMPP:${FQDN}
+# Update Jicofo configuration for JWT
+echo "Configuring Jicofo for JWT authentication..."
+if ! sudo grep -q "authentication" /etc/jitsi/jicofo/jicofo.conf; then
+    cat <<EOF | sudo tee -a /etc/jitsi/jicofo/jicofo.conf
+
+jicofo {
+  authentication: {
+    enabled: true
+    type: JWT
+    login-url: ${FQDN}
+  }
+  conference: {
+    enable-auto-owner: false
+  }
 }
 EOF
+fi
 
 sudo sed -i \
   "s~^ *// *anonymousdomain:.*~    anonymousdomain: 'guest.${FQDN}',~" \
@@ -290,3 +337,36 @@ sudo sed -i \
 
 sudo systemctl daemon-reload
 sudo systemctl restart prosody jicofo jitsi-videobridge2
+
+# Verify services are running
+echo "✅ Verifying services..."
+for service in prosody jicofo jitsi-videobridge2 nginx; do
+    if sudo systemctl is-active --quiet $service; then
+        echo "✅ $service is running"
+    else
+        echo "❌ $service is not running"
+        sudo systemctl status $service
+    fi
+done
+
+echo ""
+echo "🎉 JWT authentication enabled successfully!"
+echo ""
+echo "📋 Important notes:"
+echo "1. Your JWT credentials are saved in ~/jwt_credentials.txt"
+echo "2. APP_SECRET is what you'll use as JWT_SECRET in OIDC setup"
+echo "3. Meetings now require authentication to CREATE rooms"
+echo "4. Guests can still JOIN rooms without authentication"
+echo ""
+echo "📝 Your JWT credentials:"
+echo "   APP_ID: $APP_ID"
+echo "   APP_SECRET: $APP_SECRET"
+echo ""
+echo "🔧 Next steps:"
+echo "1. Test that you can still access: https://${FQDN}"
+echo "2. Try creating a room (should prompt for authentication)"
+echo "3. Now you can proceed with OIDC setup using APP_SECRET above"
+echo ""
+echo "🛠️  If you encounter issues, check logs:"
+echo "   - Prosody: sudo journalctl -u prosody -f"
+echo "   - Jicofo: sudo journalctl -u jicofo -f"
