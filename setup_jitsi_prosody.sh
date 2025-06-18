@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.0.4
+#v1.0.5
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
@@ -144,23 +144,33 @@ sudo apt-get -y install nginx
 echo "Installing PostgreSQL"
 sudo apt-get -y install postgresql
 
+# Install certificates
+echo "Installing certificates"
+sudo systemctl stop nginx
+sudo mkdir -p /etc/jitsi/meet
+CERT_PATH="/etc/jitsi/meet/${FQDN}"
+sudo certbot certonly --standalone -d ${FQDN} --agree-tos -m ${ADMIN_MAIL} --non-interactive
+sudo install -o root -g ssl-cert -m 640 \
+    /etc/letsencrypt/live/${FQDN}/privkey.pem ${CERT_PATH}.key
+sudo install -o root -g ssl-cert -m 644 \
+    /etc/letsencrypt/live/${FQDN}/fullchain.pem ${CERT_PATH}.crt
+sudo systemctl start nginx
 
-## Install jitsi
+# Install jitsi
 echo "Installing Jitsi"
 sudo debconf-set-selections <<EOF
-# packages that need to know the public hostname
-jitsi-videobridge2  jitsi-videobridge/jvb-hostname  string  ${FQDN}
-
-# stop the certificate wizard
-jitsi-meet-web-config jitsi-meet/cert-choice        select  Let's Encrypt certificates
-jitsi-meet-web-config jitsi-meet/letsencrypt-email  string  ${ADMIN_MAIL}
-jitsi-meet-web-config jitsi-meet/jaas-choice        boolean false
+jitsi-videobridge2 jitsi-videobridge/jvb-hostname string ${FQDN}
+jitsi-meet-prosody  jitsi-meet/jvb-hostname       string ${FQDN}
+jitsi-meet-web-config	jitsi-meet/cert-choice	select	I want to use my own certificate
+jitsi-meet-web-config	jitsi-meet/cert-path-crt	string	${CERT_PATH}.crt
+jitsi-meet-web-config	jitsi-meet/cert-path-key	string	${CERT_PATH}.key
+jitsi-meet-web-config	jitsi-meet/jaas-choice	boolean	false
 EOF
 curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
 echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list
 wait_for_apt
 sudo apt-get update
-sudo apt-get -y install jicofo jitsi-meet jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 lua-dbi-postgresql lua-cjson lua-zlib
+sudo apt-get -y install jicofo jitsi-meet jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 jigasi lua-dbi-postgresql lua-cjson lua-zlib
 
 ## Software Configuration
 
@@ -176,7 +186,7 @@ echo "Configuring Prosody"
 sudo mkdir -p /etc/prosody/conf.d
 
 # Create the main configuration file
-cat <<EOF | sudo tee/etc/prosody/conf.d/90-pgsql-storage.cfg.lua
+cat <<EOF | sudo tee /etc/prosody/conf.d/90-pgsql-storage.cfg.lua
 -- Global switch-over to PostgreSQL
 storage = "sql"
 
@@ -201,6 +211,26 @@ sudo prosodyctl migrator migrate --from=internal --to=sql \
 
 sudo systemctl restart prosody
 
+# Create refresh script for certificates
+cat <<EOF | sudo tee /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
+#!/usr/bin/env bash
+set -e
+DOMAIN="${RENEWED_LINEAGE##*/}"   # “/etc/letsencrypt/live/<domain>”
+
+install -o root -g ssl-cert -m 640 "${RENEWED_LINEAGE}/privkey.pem" \
+        "/etc/jitsi/meet/${DOMAIN}.key"
+install -o root -g ssl-cert -m 644 "${RENEWED_LINEAGE}/fullchain.pem" \
+        "/etc/jitsi/meet/${DOMAIN}.crt"
+
+# Let Prosody import the cert for XMPP
+prosodyctl --root cert import "${RENEWED_LINEAGE}" || true
+
+systemctl reload nginx
+systemctl restart prosody jicofo jitsi-videobridge2
+EOF
+
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
+
 
 ## Write Configuration to File
 # Save host data to file for reference
@@ -221,6 +251,11 @@ sudo -u postgres psql -d prosody -c "\dt" >> ~/server_config.txt
 
 ### Optimization
 # Set recommended system properties for Jitsi integration
+
+# sudo sed -i 's/DefaultLimitNOFILE=65000/DefaultLimitNOFILE=65000/' /etc/systemd/system.conf
+# sudo sed -i 's/DefaultLimitNPROC=65000/DefaultLimitNPROC=65000/' /etc/systemd/system.conf
+# sudo sed -i 's/DefaultTasksMax=65000/DefaultTasksMax=65000/' /etc/systemd/system.conf
+
 echo "Setting recommended Prosody system properties"
 sudo sed -i 's/authentication *=.*/authentication = "internal_hashed"/' \
         /etc/prosody/conf.avail/${FQDN}.cfg.lua
@@ -246,4 +281,5 @@ sudo sed -i \
   "s~^ *// *anonymousdomain:.*~    anonymousdomain: 'guest.${FQDN}',~" \
   /etc/jitsi/meet/${FQDN}-config.js
 
+sudo systemctl daemon-reload
 sudo systemctl restart prosody jicofo jitsi-videobridge2
