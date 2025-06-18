@@ -31,8 +31,14 @@ wait_for_service() {
   return 1
 }
 
+# Check if the domain is valid
+if [[ ! "$1" =~ ^[a-zA-Z0-9.-]+$ ]]; then
+    echo "Invalid domain name. Please use only letters, numbers, and hyphens."
+    exit 1
+fi
 
 DOMAIN=${1}
+
 if [[ $# -eq 2 ]]; then
     IP=${2}
 else
@@ -49,8 +55,11 @@ echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FOCUS_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 JVB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
-FQDN="meet.${DOMAIN}"
-
+if [[ ! "$DOMAIN" == meet.* ]]; then
+    FQDN="${DOMAIN}"
+else
+    FQDN="meet.${DOMAIN}"
+fi
 
 if ! dig +short A "$FQDN" | grep -q "$IP"; then
    echo "❌ ${FQDN} does not resolve to ${IP}. Aborting."
@@ -167,7 +176,7 @@ echo "Configuring Prosody"
 sudo mkdir -p /etc/prosody/conf.d
 
 # Create the main configuration file
-cat <<EOF >/etc/prosody/conf.d/90-pgsql-storage.cfg.lua
+cat <<EOF | sudo tee/etc/prosody/conf.d/90-pgsql-storage.cfg.lua
 -- Global switch-over to PostgreSQL
 storage = "sql"
 
@@ -196,7 +205,7 @@ sudo systemctl restart prosody
 ## Write Configuration to File
 # Save host data to file for reference
 echo "Saving host data"
-cat <<EOF >~/server_config.txt
+cat <<EOF > ~/server_config.txt
 -- Server Configuration --
 FQDN: ${FQDN}
 IP Address: ${IP}
@@ -216,7 +225,7 @@ echo "Setting recommended Prosody system properties"
 sudo sed -i 's/authentication *=.*/authentication = "internal_hashed"/' \
         /etc/prosody/conf.avail/${FQDN}.cfg.lua
 
-cat <<EOS >>/etc/prosody/conf.avail/${FQDN}.cfg.lua
+cat <<EOS | sudo tee -a /etc/prosody/conf.avail/${FQDN}.cfg.lua
 
 -- Guests wait here until a moderator joins
 VirtualHost "guest.${FQDN}"
@@ -237,4 +246,4 @@ sudo sed -i \
   "s~^ *// *anonymousdomain:.*~    anonymousdomain: 'guest.${FQDN}',~" \
   /etc/jitsi/meet/${FQDN}-config.js
 
-systemctl restart prosody jicofo jitsi-videobridge2
+sudo systemctl restart prosody jicofo jitsi-videobridge2
