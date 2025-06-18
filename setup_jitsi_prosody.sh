@@ -3,7 +3,8 @@
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
 # Stop on errors
-set -euo pipefail
+set -Eeuo pipefail
+trap 'echo "❌  error in $BASH_SOURCE:$LINENO: $BASH_COMMAND"' ERR
 
 if [[ $# -lt 1 || $# -gt 2 ]]; then
     echo "Usage: $0 <DNS DOMAIN> [IP]"
@@ -56,8 +57,7 @@ echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
-FOCUS_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
-JVB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+
 if [[ "${DOMAIN}" == meet.* ]]; then
     FQDN="${DOMAIN}"
 else
@@ -65,9 +65,9 @@ else
 fi
 
 if ! dig +short A "$FQDN" | grep -q "$IP"; then
-   echo "❌ ${FQDN} does not resolve to ${IP}. Aborting."
-   exit 1
-fi
+    echo "❌ $FQDN does not resolve to $IP" >&2
+    exit 1
+fi || true          #  ← allow the pipeline to fail politely
 
 # Export variables for use in other scripts
 export FQDN=${FQDN}
