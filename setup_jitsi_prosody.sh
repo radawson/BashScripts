@@ -56,7 +56,7 @@ fi
 echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
-DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
+DB_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)
 
 if [[ "${DOMAIN}" == meet.* ]]; then
     FQDN="${DOMAIN}"
