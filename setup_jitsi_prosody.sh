@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.0.5
+#v1.0.6
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
 # Stop on errors
@@ -186,7 +186,33 @@ sql = {
 }
 EOF
 
+# Now get LetsEncrypt certificates
+echo "Getting LetsEncrypt certificates"
+sudo systemctl stop nginx
+sudo certbot certonly --standalone -d ${FQDN} --agree-tos -m ${ADMIN_MAIL} --non-interactive
 
+sudo cp /etc/letsencrypt/live/${FQDN}/privkey.pem /etc/jitsi/meet/${FQDN}.key
+sudo cp /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/jitsi/meet/${FQDN}.crt
+
+# Create refresh script for certificates
+cat <<EOF | sudo tee /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
+#!/usr/bin/env bash
+set -e
+DOMAIN="${RENEWED_LINEAGE##*/}"   # “/etc/letsencrypt/live/<domain>”
+
+install -o root -g ssl-cert -m 640 "${RENEWED_LINEAGE}/privkey.pem" \
+        "/etc/jitsi/meet/${DOMAIN}.key"
+install -o root -g ssl-cert -m 644 "${RENEWED_LINEAGE}/fullchain.pem" \
+        "/etc/jitsi/meet/${DOMAIN}.crt"
+
+# Let Prosody import the cert for XMPP
+prosodyctl --root cert import "${RENEWED_LINEAGE}" || true
+
+systemctl reload nginx
+systemctl restart prosody jicofo jitsi-videobridge2
+EOF
+
+sudo chmod +x /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
 
 # Restart nginx to apply the new configuration
 echo "Restarting Nginx"
