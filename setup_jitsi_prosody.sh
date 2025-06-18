@@ -55,7 +55,7 @@ echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
 DB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 FOCUS_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
 JVB_PASSWORD=$(cat /dev/urandom | tr -dc 'a-zA-Z0-9' | fold -w 16 | head -n 1)
-if [[ ! "$DOMAIN" == meet.* ]]; then
+if [[ "${DOMAIN}" == meet.* ]]; then
     FQDN="${DOMAIN}"
 else
     FQDN="meet.${DOMAIN}"
