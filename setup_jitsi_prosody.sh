@@ -299,6 +299,7 @@ if [[ "$SKIP_CERTBOT" == "true" ]]; then
         exit 1
     fi
     echo "✅ Found existing certificates for ${FQDN}"
+    sudo mkdir -p /etc/letsencrypt/renewal-hooks/deploy/
 else
     echo "Getting Let's Encrypt certificates"
     sudo systemctl stop nginx
