@@ -162,15 +162,10 @@ sudo ln -s /snap/bin/certbot /usr/bin/certbot
 echo "Installing PostgreSQL"
 sudo apt-get -y install postgresql
 
-# Install lua packages
 # Install lua packages and dependencies
 echo "Installing lua packages and OpenSSL development headers"
 wait_for_apt
-sudo apt-get install -y lua5.2 liblua5.2-dev luarocks libssl-dev openssl build-essential
-
-echo "Installing lua rocks packages..."
-sudo luarocks install basexx
-sudo luarocks install luacrypto
+sudo apt-get install -y lua5.2 liblua5.2-dev libssl-dev openssl build-essential
 
 # Install jitsi
 echo "Installing Jitsi"
