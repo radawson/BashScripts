@@ -6,9 +6,36 @@
 set -Eeuo pipefail
 trap 'echo "❌  error in $BASH_SOURCE:$LINENO: $BASH_COMMAND"' ERR
 
-if [[ $# -lt 1 || $# -gt 2 ]]; then
-    echo "Usage: $0 <DNS DOMAIN> [IP]"
-    echo "Example: $0 example.com 192.168.1.1"
+SKIP_CERTBOT=false
+
+# Parse arguments for skip-certbot flag
+DOMAIN=""
+IP=""
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --skip-certbot)
+            SKIP_CERTBOT=true
+            shift
+            ;;
+        *)
+            if [[ -z "$DOMAIN" ]]; then
+                DOMAIN="$1"
+            elif [[ -z "$IP" ]]; then
+                IP="$1"
+            else
+                echo "❌ Too many arguments" >&2
+                echo "Usage: $0 <DNS DOMAIN> [IP] [--skip-certbot]"
+                exit 1
+            fi
+            shift
+            ;;
+    esac
+done
+
+# Validate required arguments
+if [[ -z "$DOMAIN" ]]; then
+    echo "Usage: $0 <DNS DOMAIN> [IP] [--skip-certbot]"
+    echo "Example: $0 example.com 192.168.1.1 --skip-certbot"
     echo "meet. will be added to the domain"
     exit 1
 fi
@@ -247,9 +274,25 @@ sql = {
 EOF
 
 # Now get LetsEncrypt certificates
-echo "Getting LetsEncrypt certificates"
-sudo systemctl stop nginx
-sudo certbot certonly --standalone -d ${FQDN} --agree-tos -m ${ADMIN_MAIL} --non-interactive
+if [[ "$SKIP_CERTBOT" == "true" ]]; then
+    echo "Skipping Let's Encrypt certificate generation (using existing certificates)"
+    
+    # Verify certificates exist
+    if [[ ! -f "/etc/letsencrypt/live/${FQDN}/privkey.pem" ]] || [[ ! -f "/etc/letsencrypt/live/${FQDN}/fullchain.pem" ]]; then
+        echo "❌ Certificates not found!" >&2
+        echo "Expected:" >&2
+        echo "  /etc/letsencrypt/live/${FQDN}/privkey.pem" >&2
+        echo "  /etc/letsencrypt/live/${FQDN}/fullchain.pem" >&2
+        echo "" >&2
+        echo "💡 Copy your certificates there or run without --skip-certbot" >&2
+        exit 1
+    fi
+    echo "✅ Found existing certificates for ${FQDN}"
+else
+    echo "Getting Let's Encrypt certificates"
+    sudo systemctl stop nginx
+    sudo certbot certonly --standalone -d ${FQDN} --agree-tos -m ${ADMIN_MAIL} --non-interactive
+fi
 
 sudo cp /etc/letsencrypt/live/${FQDN}/privkey.pem /etc/jitsi/meet/${FQDN}.key
 sudo cp /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/jitsi/meet/${FQDN}.crt
