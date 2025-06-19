@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.0.8
+#v1.0.9
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
 # Stop on errors
