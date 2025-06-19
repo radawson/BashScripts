@@ -1,5 +1,5 @@
 #!/bin/bash
-#v1.0.7
+#v1.0.8
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
 # Stop on errors
@@ -174,14 +174,18 @@ echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jit
 wait_for_apt
 sudo apt-get update
 
+# Clear any existing debconf cache
+sudo debconf-communicate <<EOF
+PURGE
+EOF
+
 sudo debconf-set-selections <<EOF
 jitsi-videobridge jitsi-videobridge/jvb-hostname string ${FQDN}
-jitsi-meet-web-config jitsi-meet/cert-choice select \
-  "Generate a new self-signed certificate (You will later get a chance to obtain a Let's encrypt certificate)"
+jitsi-meet-web-config jitsi-meet/cert-choice select "Generate a new self-signed certificate (You will later get a chance to obtain a Let's encrypt certificate)"
 jitsi-meet-web-config jitsi-meet/letsencrypt-email string ${ADMIN_MAIL}
 jitsi-meet-web-config jitsi-meet/jaas-choice boolean false
-jitsi-meet-tokens/app-id string ${APP_ID}
-jitsi-meet-tokens/app-secret string ${APP_SECRET}
+jitsi-meet-tokens jitsi-meet-tokens/app-id string ${APP_ID}
+jitsi-meet-tokens jitsi-meet-tokens/app-secret string ${APP_SECRET}
 EOF
 
 sudo apt-get -y install jicofo jitsi-meet jitsi-meet-tokens jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 lua-dbi-postgresql lua-cjson lua-zlib
