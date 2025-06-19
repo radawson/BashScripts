@@ -88,8 +88,26 @@ if [[ "$SKIP_CERTBOT" == "true" ]]; then
     echo "Skipping Let's Encrypt (using existing certificates)"
 fi
 
+# Function to wait for apt locks to be released
 wait_for_apt() {
-  
+  echo "Checking for apt/dpkg locks:"
+  while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
+    printf "Waiting for other apt/dpkg processes to complete..."
+    sleep 5
+    printf "."
+  done
+  echo -e "\n\nLocks released, proceeding with installation."
+}
+
+# Function to wait for Prosody to be available
+wait_for_service() {
+  service=$1; shift
+  for i in {1..30}; do
+    systemctl is-active --quiet "$service" && return 0
+    sleep 5
+  done
+  echo "$service did not start" >&2
+  return 1
 }
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
