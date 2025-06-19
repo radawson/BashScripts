@@ -179,16 +179,45 @@ sudo debconf-communicate <<EOF
 PURGE
 EOF
 
+# Alternative: Install packages in correct dependency order
+echo "Installing Jitsi packages in dependency order..."
+
+# Stage 1: Install core Jitsi Meet first (this creates base Prosody config)
+echo "Stage 1: Installing core Jitsi Meet..."
 sudo debconf-set-selections <<EOF
 jitsi-videobridge jitsi-videobridge/jvb-hostname string ${FQDN}
 jitsi-meet-web-config jitsi-meet/cert-choice select "Generate a new self-signed certificate (You will later get a chance to obtain a Let's encrypt certificate)"
 jitsi-meet-web-config jitsi-meet/letsencrypt-email string ${ADMIN_MAIL}
 jitsi-meet-web-config jitsi-meet/jaas-choice boolean false
+EOF
+
+sudo DEBIAN_FRONTEND=noninteractive apt-get -y install \
+    jitsi-meet \
+    jitsi-meet-web \
+    jitsi-meet-web-config \
+    jicofo \
+    jitsi-videobridge2
+
+# Stage 2: Now add JWT tokens (modifies existing Prosody config)
+echo "Stage 2: Adding JWT authentication..."
+sudo debconf-set-selections <<EOF
 jitsi-meet-tokens jitsi-meet-tokens/app-id string ${APP_ID}
 jitsi-meet-tokens jitsi-meet-tokens/app-secret string ${APP_SECRET}
 EOF
 
-sudo apt-get -y install jicofo jitsi-meet jitsi-meet-tokens jitsi-meet-turnserver jitsi-meet-web jitsi-meet-web-config jitsi-videobridge2 lua-dbi-postgresql lua-cjson lua-zlib
+# Verify settings
+echo "Verifying debconf settings were applied:"
+sudo debconf-show jitsi-meet-tokens | grep -E "(app-id|app-secret)" | tee ~/jwt.txt
+
+sudo DEBIAN_FRONTEND=noninteractive apt-get -y install jitsi-meet-tokens
+
+# Stage 3: Add remaining components
+echo "Stage 3: Installing additional components..."
+sudo DEBIAN_FRONTEND=noninteractive apt-get -y install \
+    jitsi-meet-turnserver \
+    lua-dbi-postgresql \
+    lua-cjson \
+    lua-zlib
 
 ## Software Configuration
 
@@ -226,7 +255,7 @@ sudo cp /etc/letsencrypt/live/${FQDN}/privkey.pem /etc/jitsi/meet/${FQDN}.key
 sudo cp /etc/letsencrypt/live/${FQDN}/fullchain.pem /etc/jitsi/meet/${FQDN}.crt
 
 # Create refresh script for certificates
-cat <<EOF | sudo tee /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
+cat <<'EOF' | sudo tee /etc/letsencrypt/renewal-hooks/deploy/20-jitsi.sh
 #!/usr/bin/env bash
 set -e
 DOMAIN="${RENEWED_LINEAGE##*/}"   # " /etc/letsencrypt/live/<domain>"
