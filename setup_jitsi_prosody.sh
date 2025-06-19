@@ -1,21 +1,29 @@
 #!/bin/bash
-#v1.0.9
+#v1.0.10
 # This script sets up a Jitsi Meet server with Prosody XMPP server as the XMPP backend.
 
 # Stop on errors
 set -Eeuo pipefail
 trap 'echo "❌  error in $BASH_SOURCE:$LINENO: $BASH_COMMAND"' ERR
 
+# Initialize variables
 SKIP_CERTBOT=false
-
-# Parse arguments for skip-certbot flag
 DOMAIN=""
 IP=""
+
+# Parse arguments
 while [[ $# -gt 0 ]]; do
     case $1 in
         --skip-certbot)
             SKIP_CERTBOT=true
             shift
+            ;;
+        -h|--help)
+            echo "Usage: $0 <DNS DOMAIN> [IP] [--skip-certbot]"
+            echo "Example: $0 example.com 192.168.1.1"
+            echo "Example: $0 example.com 192.168.1.1 --skip-certbot"
+            echo "meet. will be added to the domain"
+            exit 0
             ;;
         *)
             if [[ -z "$DOMAIN" ]]; then
@@ -35,35 +43,13 @@ done
 # Validate required arguments
 if [[ -z "$DOMAIN" ]]; then
     echo "Usage: $0 <DNS DOMAIN> [IP] [--skip-certbot]"
+    echo "Example: $0 example.com 192.168.1.1"
     echo "Example: $0 example.com 192.168.1.1 --skip-certbot"
     echo "meet. will be added to the domain"
     exit 1
 fi
 
-# Function to wait for apt locks to be released
-wait_for_apt() {
-  echo "Checking for apt/dpkg locks:"
-  while sudo fuser /var/lib/dpkg/lock >/dev/null 2>&1 || sudo fuser /var/lib/apt/lists/lock >/dev/null 2>&1 || sudo fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1; do
-    printf "Waiting for other apt/dpkg processes to complete..."
-    sleep 5
-    printf "."
-  done
-  echo -e "\n\nLocks released, proceeding with installation."
-}
-
-# Function to wait for Prosody to be available
-wait_for_service() {
-  service=$1; shift
-  for i in {1..30}; do
-    systemctl is-active --quiet "$service" && return 0
-    sleep 5
-  done
-  echo "$service did not start" >&2
-  return 1
-}
-
 # Validate domain name format
-DOMAIN=${1}
 if [[ ! "${DOMAIN}" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?)*$ ]]; then
     echo "❌ Invalid domain name format. Domain must:" >&2
     echo "   - Start and end with a letter or number" >&2
@@ -73,9 +59,15 @@ if [[ ! "${DOMAIN}" =~ ^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z0-9]([a-
     exit 1
 fi
 
-# Validate IP address if provided
-if [[ $# -eq 2 ]]; then
-    IP=${2}
+# Auto-detect IP if not provided
+if [[ -z "$IP" ]]; then
+    IP=$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print $4}' | cut -d/ -f1)
+    if [[ -z "${IP}" ]]; then
+        echo "❌ Unable to determine IP address. Please provide it as the second argument." >&2
+        exit 1
+    fi
+else
+    # Validate provided IP address
     if [[ ! "${IP}" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
         echo "❌ Invalid IP address format. Must be in format: xxx.xxx.xxx.xxx" >&2
         exit 1
@@ -89,15 +81,16 @@ if [[ $# -eq 2 ]]; then
             exit 1
         fi
     done
-else
-    IP=$(ip -o -4 addr | grep -E ' (en|eth)[^ ]+' | head -n1 | awk '{print $4}' | cut -d/ -f1)
-    if [[ -z "${IP}" ]]; then
-        echo "❌ Unable to determine IP address. Please provide it as the second argument." >&2
-        exit 1
-    fi
 fi
 
 echo "Setting up Jitsi with domain ${DOMAIN} and IP ${IP}"
+if [[ "$SKIP_CERTBOT" == "true" ]]; then
+    echo "Skipping Let's Encrypt (using existing certificates)"
+fi
+
+wait_for_apt() {
+  
+}
 
 # Generate a secure random-ish password (16 chars, alphanumeric only)
 DB_PASSWORD=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 16)
