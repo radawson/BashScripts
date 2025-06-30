@@ -178,11 +178,23 @@ echo "Adding Ubuntu universe repository"
 wait_for_apt
 sudo apt-add-repository -y universe
 
+# Add Jitsi repository
+echo "Adding Jitsi repository"
+wait_for_apt
+curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
+echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list
+
 # Add PostgreSQL repository
 echo "Adding PostgreSQL repository"
 wait_for_apt
 sudo apt-get install -y postgresql-common
 sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+
+# Add prosody repository
+echo "Adding prosody repository"
+wait_for_apt
+sudo wget https://packages.prosody.im/debian/pubkey-new.asc -O /etc/apt/trusted.gpg.d/prosody-new.asc
+echo "deb https://packages.prosody.im/debian $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/prosody.list
 
 # Update package list
 wait_for_apt
@@ -203,12 +215,10 @@ sudo apt-get -y install postgresql
 # Install lua packages and dependencies
 echo "Installing lua packages and OpenSSL development headers"
 wait_for_apt
-sudo apt-get install -y lua5.2 liblua5.2-dev libssl-dev openssl build-essential
+sudo apt-get install -y lua5.4 liblua5.4-dev libssl-dev openssl build-essential
 
 # Install jitsi
 echo "Installing Jitsi"
-curl -sL https://download.jitsi.org/jitsi-key.gpg.key | sudo sh -c 'gpg --dearmor > /usr/share/keyrings/jitsi-keyring.gpg'
-echo "deb [signed-by=/usr/share/keyrings/jitsi-keyring.gpg] https://download.jitsi.org stable/" | sudo tee /etc/apt/sources.list.d/jitsi-stable.list
 wait_for_apt
 sudo apt-get update
 
@@ -217,7 +227,7 @@ sudo debconf-communicate <<EOF
 PURGE
 EOF
 
-# Alternative: Install packages in correct dependency order
+# Install packages in correct dependency order
 echo "Installing Jitsi packages in dependency order..."
 
 # Stage 1: Install core Jitsi Meet first (this creates base Prosody config)
@@ -229,33 +239,7 @@ jitsi-meet-web-config jitsi-meet/letsencrypt-email string ${ADMIN_MAIL}
 jitsi-meet-web-config jitsi-meet/jaas-choice boolean false
 EOF
 
-sudo DEBIAN_FRONTEND=noninteractive apt-get -y install \
-    jitsi-meet \
-    jitsi-meet-web \
-    jitsi-meet-web-config \
-    jicofo \
-    jitsi-videobridge2
-
-# Stage 2: Now add JWT tokens (modifies existing Prosody config)
-echo "Stage 2: Adding JWT authentication..."
-sudo debconf-set-selections <<EOF
-jitsi-meet-tokens jitsi-meet-tokens/app-id string ${APP_ID}
-jitsi-meet-tokens jitsi-meet-tokens/app-secret string ${APP_SECRET}
-EOF
-
-# Verify settings
-echo "Verifying debconf settings were applied:"
-sudo debconf-show jitsi-meet-tokens | grep -E "(app-id|app-secret)" | tee ~/jwt.txt
-
-sudo DEBIAN_FRONTEND=noninteractive apt-get -y install jitsi-meet-tokens
-
-# Stage 3: Add remaining components
-echo "Stage 3: Installing additional components..."
-sudo DEBIAN_FRONTEND=noninteractive apt-get -y install \
-    jitsi-meet-turnserver \
-    lua-dbi-postgresql \
-    lua-cjson \
-    lua-zlib
+sudo DEBIAN_FRONTEND=noninteractive apt-get -y install jitsi-meet lua-dbi-postgresql lua-cjson lua-zlib
 
 ## Software Configuration
 
@@ -365,21 +349,6 @@ sudo -u postgres psql -d prosody -c "\dt" >> ~/server_config.txt
 # sudo sed -i 's/DefaultTasksMax=65000/DefaultTasksMax=65000/' /etc/systemd/system.conf
 
 echo "Setting recommended Prosody system properties"
-# Verify the JWT configuration was applied
-echo "Verifying JWT configuration..."
-if sudo grep -q "authentication.*=.*\"token\"" /etc/prosody/conf.avail/${FQDN}.cfg.lua; then
-    echo "✅ JWT authentication configured by jitsi-meet-tokens package"
-else
-    echo "⚠️  JWT not configured automatically, applying manual configuration..."
-    # Manual JWT configuration as fallback
-    sudo sed -i '/VirtualHost "'${FQDN}'"/,/^VirtualHost\|^Component\|^$/ {
-        s/authentication = "anonymous"/authentication = "token"/
-        /authentication = "token"/a\
-    app_id = "'${APP_ID}'"\
-    app_secret = "'${APP_SECRET}'"\
-    allow_empty_token = false
-    }' /etc/prosody/conf.avail/${FQDN}.cfg.lua
-fi
 
 # Check if guest domain exists, if not add it
 if ! sudo grep -q "guest\.${FQDN}" /etc/prosody/conf.avail/${FQDN}.cfg.lua; then
@@ -403,24 +372,6 @@ elif ! sudo grep -q "anonymousdomain:" /etc/jitsi/meet/${FQDN}-config.js; then
     sudo sed -i "/domain: '${FQDN}',/a\\    anonymousdomain: 'guest.${FQDN}'," /etc/jitsi/meet/${FQDN}-config.js
 fi
 
-# Update Jicofo configuration for JWT
-echo "Configuring Jicofo for JWT authentication..."
-if ! sudo grep -q "authentication" /etc/jitsi/jicofo/jicofo.conf; then
-    cat <<EOF | sudo tee -a /etc/jitsi/jicofo/jicofo.conf
-
-jicofo {
-  authentication: {
-    enabled: true
-    type: JWT
-    login-url: ${FQDN}
-  }
-  conference: {
-    enable-auto-owner: false
-  }
-}
-EOF
-fi
-
 sudo sed -i \
   "s~^ *// *anonymousdomain:.*~    anonymousdomain: 'guest.${FQDN}',~" \
   /etc/jitsi/meet/${FQDN}-config.js
@@ -438,25 +389,3 @@ for service in prosody jicofo jitsi-videobridge2 nginx; do
         sudo systemctl status $service
     fi
 done
-
-echo ""
-echo "🎉 JWT authentication enabled successfully!"
-echo ""
-echo "📋 Important notes:"
-echo "1. Your JWT credentials are saved in ~/server_config.txt"
-echo "2. APP_SECRET is what you'll use as JWT_SECRET in OIDC setup"
-echo "3. Meetings now require authentication to CREATE rooms"
-echo "4. Guests can still JOIN rooms without authentication"
-echo ""
-echo "📝 Your JWT credentials:"
-echo "   APP_ID: $APP_ID"
-echo "   APP_SECRET: $APP_SECRET"
-echo ""
-echo "🔧 Next steps:"
-echo "1. Test that you can still access: https://${FQDN}"
-echo "2. Try creating a room (should prompt for authentication)"
-echo "3. Now you can proceed with OIDC setup using APP_SECRET above"
-echo ""
-echo "🛠️  If you encounter issues, check logs:"
-echo "   - Prosody: sudo journalctl -u prosody -f"
-echo "   - Jicofo: sudo journalctl -u jicofo -f"

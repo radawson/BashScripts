@@ -195,6 +195,29 @@ elif [[ "$APPROACH" == "adapter" ]]; then
     sudo apt-get update
     sudo apt-get install -y python3 python3-pip git python3-venv gunicorn
     
+    # Stage 2: Now add JWT tokens (modifies existing Prosody config)
+    echo "Stage 2: Adding JWT authentication..."
+    sudo debconf-set-selections <<EOF
+    jitsi-meet-tokens jitsi-meet-tokens/app-id string ${APP_ID}
+    jitsi-meet-tokens jitsi-meet-tokens/app-secret string ${APP_SECRET}
+    EOF
+
+    # Verify settings
+    echo "Verifying debconf settings were applied:"
+    sudo debconf-show jitsi-meet-tokens | grep -E "(app-id|app-secret)" | tee ~/jwt.txt
+
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install jitsi-meet-tokens
+
+    # Stage 3: Add remaining components
+    echo "Stage 3: Installing additional components..."
+    sudo DEBIAN_FRONTEND=noninteractive apt-get -y install \
+        jitsi-meet-turnserver \
+        lua-dbi-postgresql \
+        lua-cjson \
+        lua-zlib
+
+
+
     # Create application directory
     sudo mkdir -p /opt/jitsi-oidc-adapter
     cd /opt/jitsi-oidc-adapter
@@ -539,3 +562,26 @@ if [[ "$APPROACH" == "adapter" ]]; then
     echo "   - Provides better error handling and logging"
     echo "   - Is easier to maintain and debug"
 fi
+
+
+echo ""
+echo "🎉 JWT authentication enabled successfully!"
+echo ""
+echo "📋 Important notes:"
+echo "1. Your JWT credentials are saved in ~/server_config.txt"
+echo "2. APP_SECRET is what you'll use as JWT_SECRET in OIDC setup"
+echo "3. Meetings now require authentication to CREATE rooms"
+echo "4. Guests can still JOIN rooms without authentication"
+echo ""
+echo "📝 Your JWT credentials:"
+echo "   APP_ID: $APP_ID"
+echo "   APP_SECRET: $APP_SECRET"
+echo ""
+echo "🔧 Next steps:"
+echo "1. Test that you can still access: https://${FQDN}"
+echo "2. Try creating a room (should prompt for authentication)"
+echo "3. Now you can proceed with OIDC setup using APP_SECRET above"
+echo ""
+echo "🛠️  If you encounter issues, check logs:"
+echo "   - Prosody: sudo journalctl -u prosody -f"
+echo "   - Jicofo: sudo journalctl -u jicofo -f"
