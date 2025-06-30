@@ -1,5 +1,13 @@
 #!/bin/bash
 # Expand the filesystem to the maximum size of the disk (LVM or non-LVM)
+# Copyright (c) 2025, Rick Dawson
+# License: MIT
+# Version: 1.1.0
+# Description: This script expands the filesystem to the maximum size of the disk (LVM or non-LVM)
+# Usage: ./expand-fs.sh <disk_device> [mount_point]
+# Example: ./expand-fs.sh /dev/sda1 /mnt/data
+# Note: This script requires sudo privileges
+# Note: This script requires parted and growpart to be installed
 
 # Exit on any error
 set -e
