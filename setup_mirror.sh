@@ -63,3 +63,5 @@ sudo nginx -t
 sudo nginx -s reload
 
 # Run apt-mirror to create the mirror
+echo "Running apt-mirror to create the mirror..."
+sudo apt-mirror 2>&1 | tee /var/log/apt-mirror.log
