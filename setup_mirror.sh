@@ -51,6 +51,8 @@ server {
     listen 80;
     server_name mirror.${DOMAIN};  
 
+    root /var/spool/apt-mirror/mirror;
+
     location /ubuntu/ {
         alias $MIRROR_DIR/mirror/archive.ubuntu.com/ubuntu/;
         autoindex on;
