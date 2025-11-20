@@ -62,6 +62,15 @@ sudo ln -s $NGINX_CONF $NGINX_LINK
 sudo nginx -t
 sudo nginx -s reload
 
+# Set up cron job
+sudo bash -c "cat > /etc/cron.d/apt-mirror <<EOL
+#
+# Regular cron jobs for the apt-mirror package
+#
+0 4 * * *   apt-mirror      /usr/bin/apt-mirror > /var/spool/apt-mirror/var/log/cron.log
+0 2 * * 0   apt-mirror      /var/spool/apt-mirror/var/clean.sh > /var/spool/apt-mirror/var/log/clean.log
+EOL"
+
 # Run apt-mirror to create the mirror
 echo "Running apt-mirror to create the mirror..."
-sudo apt-mirror 2>&1 | tee /var/log/apt-mirror.log
+sudo apt-mirror 2>&1 | tee /var/spool/apt-mirror/var/log/apt-mirror.log
