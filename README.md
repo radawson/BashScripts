@@ -1,3 +1,3 @@
 # BashScripts
 
-A collection of srcipts to automate the annoying things in life.
+A collection of scripts to automate the annoying things in life.
